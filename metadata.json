@@ -1,0 +1,8 @@
+{
+  "name": "SRL Infra Developers - Interior Products & Smart Automation",
+  "description": "Premium infrastructure, interior design products, and intelligent smart automation solutions by SRL Infra Developers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

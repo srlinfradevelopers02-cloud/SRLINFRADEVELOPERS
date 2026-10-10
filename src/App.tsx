@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, {
+  useEffect,
+  useState,
+} from 'react';
 
-import { Routes, Route } from 'react-router-dom';
+import {
+  Navigate,
+  Routes,
+  Route,
+} from 'react-router-dom';
 
-// =========================================================
-// CRM PAGES
-// =========================================================
+import { supabase } from './lib/supabase';
 
 import Login from './pages/portal/login';
 import Dashboard from './pages/portal/Dashboard';
@@ -14,11 +19,10 @@ import Quotations from './pages/portal/Quotations';
 import Invoices from './pages/portal/Invoices';
 import Projects from './pages/portal/Projects';
 import Tasks from './pages/portal/Tasks';
+import Inventory from './pages/portal/Inventory';
+import ProjectMaterials from './pages/portal/ProjectMaterials';
+import Purchasing from './pages/portal/Purchasing';
 import Staff from './pages/portal/Staff';
-
-// =========================================================
-// PUBLIC WEBSITE COMPONENTS
-// =========================================================
 
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
@@ -35,22 +39,92 @@ import { ProductDetailModal } from './components/ProductDetailModal';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
 import { AdminEnquiryModal } from './components/AdminEnquiryModal';
 
-// =========================================================
-// DATA TYPES
-// =========================================================
-
 import { InteriorProduct } from './data/interiorProducts';
 import { ProjectItem } from './data/projectsAndSolutions';
 
-// =========================================================
-// PUBLIC SRL INFRA WEBSITE
-// =========================================================
+function ProtectedRoute({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [checking, setChecking] = useState(true);
+  const [authenticated, setAuthenticated] =
+    useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkSession = async () => {
+      const {
+        data,
+        error,
+      } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error(
+          'Session check failed:',
+          error
+        );
+
+        setAuthenticated(false);
+      } else {
+        setAuthenticated(
+          Boolean(data.session?.user)
+        );
+      }
+
+      setChecking(false);
+    };
+
+    checkSession();
+
+    const {
+      data: listener,
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!mounted) return;
+
+        setAuthenticated(
+          Boolean(session?.user)
+        );
+
+        setChecking(false);
+      }
+    );
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="rounded-xl bg-white px-8 py-6 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Checking authentication...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <Navigate
+        to="/portal/login"
+        replace
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
 
 function PublicWebsite() {
-  // =======================================================
-  // PRODUCT / PROJECT MODALS
-  // =======================================================
-
   const [selectedProduct, setSelectedProduct] =
     useState<InteriorProduct | null>(null);
 
@@ -58,24 +132,19 @@ function PublicWebsite() {
     useState<ProjectItem | null>(null);
 
   const [isAdminModalOpen, setIsAdminModalOpen] =
-    useState<boolean>(false);
-
-  // =======================================================
-  // CONTACT FORM PRE-FILL STATE
-  // =======================================================
+    useState(false);
 
   const [contactProjectType, setContactProjectType] =
-    useState<string>('Interior Products');
+    useState('Interior Products');
 
   const [contactInitialMessage, setContactInitialMessage] =
-    useState<string>('');
+    useState('');
 
-  // =======================================================
-  // SCROLL TO SECTION
-  // =======================================================
-
-  const scrollToSection = (sectionId: string) => {
-    const element = document.getElementById(sectionId);
+  const scrollToSection = (
+    sectionId: string
+  ) => {
+    const element =
+      document.getElementById(sectionId);
 
     if (element) {
       element.scrollIntoView({
@@ -84,14 +153,12 @@ function PublicWebsite() {
     }
   };
 
-  // =======================================================
-  // INTERIOR PRODUCT ENQUIRY
-  // =======================================================
-
   const handleRequestQuoteForProduct = (
     productName: string
   ) => {
-    setContactProjectType('Interior Products');
+    setContactProjectType(
+      'Interior Products'
+    );
 
     setContactInitialMessage(
       `I would like to request product pricing, samples, and technical specifications for ${productName}.`
@@ -100,14 +167,12 @@ function PublicWebsite() {
     scrollToSection('contact');
   };
 
-  // =======================================================
-  // AUTOMATION ENQUIRY
-  // =======================================================
-
   const handleRequestAutomationQuote = (
     solutionName: string
   ) => {
-    setContactProjectType('Automation');
+    setContactProjectType(
+      'Automation'
+    );
 
     setContactInitialMessage(
       `I am interested in consulting with SRL Infra Developers regarding ${solutionName} for my property.`
@@ -115,10 +180,6 @@ function PublicWebsite() {
 
     scrollToSection('contact');
   };
-
-  // =======================================================
-  // SPACE / SOLUTION ENQUIRY
-  // =======================================================
 
   const handleSelectSpaceSolution = (
     spaceTitle: string
@@ -140,14 +201,12 @@ function PublicWebsite() {
     scrollToSection('contact');
   };
 
-  // =======================================================
-  // PROJECT ENQUIRY
-  // =======================================================
-
   const handleEnquireProjectScope = (
     projectName: string
   ) => {
-    setContactProjectType('Commercial Infrastructure');
+    setContactProjectType(
+      'Commercial Infrastructure'
+    );
 
     setContactInitialMessage(
       `We have an upcoming project with requirements similar to "${projectName}". Please share feasibility and execution parameters.`
@@ -156,16 +215,8 @@ function PublicWebsite() {
     scrollToSection('contact');
   };
 
-  // =======================================================
-  // PUBLIC WEBSITE UI
-  // =======================================================
-
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-neutral-900 flex flex-col font-sans selection:bg-[#C5832B] selection:text-white">
-
-      {/* ===================================================
-          NAVBAR
-          =================================================== */}
 
       <Navbar
         onOpenContact={() =>
@@ -173,41 +224,22 @@ function PublicWebsite() {
         }
       />
 
-      {/* ===================================================
-          MAIN WEBSITE CONTENT
-          =================================================== */}
-
       <main className="flex-1">
-
-        {/* =================================================
-            HERO
-            ================================================= */}
 
         <Hero
           onExploreSolutions={() =>
-            scrollToSection('interior-products')
+            scrollToSection(
+              'interior-products'
+            )
           }
           onTalkToTeam={() =>
             scrollToSection('contact')
           }
         />
 
-        {/* =================================================
-            OFFICIAL BRAND IDENTITY
-            ================================================= */}
-
         <OfficialBrandIdentity />
 
-        {/* =================================================
-            BUSINESS INTRODUCTION
-            ================================================= */}
-
         <BusinessIntro />
-
-        {/* =================================================
-            DIVISION 01
-            INTERIOR DESIGN PRODUCTS
-            ================================================= */}
 
         <InteriorProductsSection
           onSelectProduct={(product) =>
@@ -218,20 +250,11 @@ function PublicWebsite() {
           }
         />
 
-        {/* =================================================
-            DIVISION 02
-            SMART AUTOMATION
-            ================================================= */}
-
         <AutomationSection
           onRequestAutomationQuote={
             handleRequestAutomationQuote
           }
         />
-
-        {/* =================================================
-            ELEVATORS
-            ================================================= */}
 
         <ElevatorSection
           onRequestQuote={(elevatorName) =>
@@ -241,47 +264,31 @@ function PublicWebsite() {
           }
         />
 
-        {/* =================================================
-            SOLUTIONS FOR EVERY SPACE
-            ================================================= */}
-
         <SolutionsSection
           onSelectSpaceSolution={
             handleSelectSpaceSolution
           }
         />
 
-        {/* =================================================
-            WHY CHOOSE US
-            ================================================= */}
-
         <WhyChooseUs />
-
-        {/* =================================================
-            CONTACT
-            ================================================= */}
 
         <ContactSection
           key={`${contactProjectType}-${contactInitialMessage}`}
-          initialProjectType={contactProjectType}
-          initialMessage={contactInitialMessage}
+          initialProjectType={
+            contactProjectType
+          }
+          initialMessage={
+            contactInitialMessage
+          }
         />
 
       </main>
-
-      {/* ===================================================
-          FOOTER
-          =================================================== */}
 
       <Footer
         onOpenAdmin={() =>
           setIsAdminModalOpen(true)
         }
       />
-
-      {/* ===================================================
-          PRODUCT DETAIL MODAL
-          =================================================== */}
 
       <ProductDetailModal
         product={selectedProduct}
@@ -293,10 +300,6 @@ function PublicWebsite() {
         }
       />
 
-      {/* ===================================================
-          PROJECT DETAIL MODAL
-          =================================================== */}
-
       <ProjectDetailModal
         project={selectedProject}
         onClose={() =>
@@ -306,10 +309,6 @@ function PublicWebsite() {
           handleEnquireProjectScope
         }
       />
-
-      {/* ===================================================
-          ADMIN ENQUIRY MODAL
-          =================================================== */}
 
       <AdminEnquiryModal
         isOpen={isAdminModalOpen}
@@ -322,59 +321,128 @@ function PublicWebsite() {
   );
 }
 
-// =========================================================
-// APPLICATION ROUTES
-// =========================================================
+function ProtectedCRM({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <ProtectedRoute>
+      {children}
+    </ProtectedRoute>
+  );
+}
 
 export default function App() {
   return (
     <Routes>
-
-      {/* =================================================
-          PUBLIC WEBSITE
-          ================================================= */}
 
       <Route
         path="/"
         element={<PublicWebsite />}
       />
 
-      {/* =================================================
-          CRM LOGIN
-          ================================================= */}
-
       <Route
         path="/portal/login"
         element={<Login />}
       />
 
-      {/* =================================================
-          CRM DASHBOARD
-          ================================================= */}
-
       <Route
         path="/portal"
-        element={<Dashboard />}
+        element={
+          <ProtectedCRM>
+            <Dashboard />
+          </ProtectedCRM>
+        }
       />
-
-      {/* =================================================
-          CRM LEADS
-          ================================================= */}
 
       <Route
         path="/portal/leads"
-        element={<Leads />}
+        element={
+          <ProtectedCRM>
+            <Leads />
+          </ProtectedCRM>
+        }
       />
-      <Route path="/portal/clients" element={<Clients />} />
-      <Route path="/portal/quotations" element={<Quotations />} />
-      <Route path="/portal/invoices" element={<Invoices />} />
-      <Route path="/portal/projects" element={<Projects />} />
-      <Route path="/portal/tasks" element={<Tasks />} />
-      <Route path="/portal/staff" element={<Staff />} />
 
-      {/* =================================================
-          FALLBACK
-          ================================================= */}
+      <Route
+        path="/portal/clients"
+        element={
+          <ProtectedCRM>
+            <Clients />
+          </ProtectedCRM>
+        }
+      />
+
+      <Route
+        path="/portal/quotations"
+        element={
+          <ProtectedCRM>
+            <Quotations />
+          </ProtectedCRM>
+        }
+      />
+
+      <Route
+        path="/portal/invoices"
+        element={
+          <ProtectedCRM>
+            <Invoices />
+          </ProtectedCRM>
+        }
+      />
+
+      <Route
+        path="/portal/projects"
+        element={
+          <ProtectedCRM>
+            <Projects />
+          </ProtectedCRM>
+        }
+      />
+
+      <Route
+        path="/portal/tasks"
+        element={
+          <ProtectedCRM>
+            <Tasks />
+          </ProtectedCRM>
+        }
+      />
+      <Route
+        path="/portal/inventory"
+        element={
+          <ProtectedCRM>
+            <Inventory />
+          </ProtectedCRM>
+        }
+      />
+      <Route
+        path="/portal/project-materials"
+        element={
+          <ProtectedCRM>
+            <ProjectMaterials />
+          </ProtectedCRM>
+        }
+      />
+      <Route
+        path="/portal/purchasing"
+        element={
+          <ProtectedCRM>
+            <Purchasing />
+          </ProtectedCRM>
+        }
+      />
+      
+
+      <Route
+        path="/portal/staff"
+        element={
+          <ProtectedCRM>
+            <Staff />
+          </ProtectedCRM>
+        }
+      />
 
       <Route
         path="*"

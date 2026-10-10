@@ -1,4 +1,4 @@
-import {
+import React, {
   useEffect,
   useMemo,
   useState,
@@ -6,113 +6,78 @@ import {
   type FormEvent,
 } from 'react';
 
-import { pb } from '../../lib/pocketbase';
+import { supabase } from '../../lib/supabase';
 
-/* =========================================================
-   TYPES
-========================================================= */
+type Role = 'ADMIN'| 'STAFF';
+
+type Department =
+  | 'ADMIN'
+  | 'TELECALLING'
+  | 'SALES'
+  | 'INTERIOR DESIGN'
+  | 'AUTOMATION'
+  | 'PROJECT MANAGEMENT'
+  | 'ACCOUNTS'
+  | 'HR'
+  | 'MARKETING'
+  | 'OPERATIONS'
+  | 'OTHER';
+
+type EmploymentType =
+  | 'FULL TIME'
+  | 'PART TIME'
+  | 'CONTRACT';
 
 type Staff = {
   id: string;
-  collectionId?: string;
-  collectionName?: string;
-
-  user?: string;
+  user_id?: string | null;
 
   staff_code: string;
   full_name: string;
   email: string;
   phone: string;
 
-  Role: 'ADMIN' | 'MANAGER' | 'STAFF';
+  role: Role;
+  department: Department;
+  designation: string;
 
-  Department:
-    | 'ADMIN'
-    | 'TELECALLING'
-    | 'SALES'
-    | 'INTERIOR DESIGN'
-    | 'AUTOMATION'
-    | 'PROJECT MANAGEMENT'
-    | 'ACCOUNTS'
-    | 'HR'
-    | 'MARKETING'
-    | 'OPERATIONS'
-    | 'OTHER';
+  joining_date?: string | null;
+  employment_type: EmploymentType;
 
-  Designation: string;
-
-  joining_date?: string;
-
-  employment_type:
-    | 'FULL TIME'
-    | 'PART TIME'
-    | 'CONTRACT';
-
-  skills?: string;
-  profile_photo?: string;
-  address?: string;
-  notes?: string;
+  skills?: string | null;
+  profile_photo?: string | null;
+  address?: string | null;
+  notes?: string | null;
 
   is_active: boolean;
 
-  created: string;
-  updated: string;
-};
-
-type PBUser = {
-  id: string;
-  email: string;
-  name?: string;
-  username?: string;
-  verified?: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type StaffForm = {
-  user: string;
+  user_id: string;
   staff_code: string;
   full_name: string;
   email: string;
   phone: string;
 
-  Role: 'ADMIN' | 'MANAGER' | 'STAFF';
-
-  Department:
-    | 'ADMIN'
-    | 'TELECALLING'
-    | 'SALES'
-    | 'INTERIOR DESIGN'
-    | 'AUTOMATION'
-    | 'PROJECT MANAGEMENT'
-    | 'ACCOUNTS'
-    | 'HR'
-    | 'MARKETING'
-    | 'OPERATIONS'
-    | 'OTHER';
-
-  Designation: string;
+  role: Role;
+  department: Department;
+  designation: string;
 
   joining_date: string;
-
-  employment_type:
-    | 'FULL TIME'
-    | 'PART TIME'
-    | 'CONTRACT';
+  employment_type: EmploymentType;
 
   skills: string;
-
   profile_photo: File | null;
-
   address: string;
   notes: string;
 
   is_active: boolean;
 };
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
-
-const DEPARTMENTS = [
+const DEPARTMENTS: Department[] = [
   'ADMIN',
   'TELECALLING',
   'SALES',
@@ -124,55 +89,40 @@ const DEPARTMENTS = [
   'MARKETING',
   'OPERATIONS',
   'OTHER',
-] as const;
+];
 
-const ROLES = [
+const ROLES: Role[] = [
   'ADMIN',
-  'MANAGER',
   'STAFF',
-] as const;
+];
 
-const EMPLOYMENT_TYPES = [
+const EMPLOYMENT_TYPES: EmploymentType[] = [
   'FULL TIME',
   'PART TIME',
   'CONTRACT',
-] as const;
-
-/* =========================================================
-   EMPTY FORM
-========================================================= */
+];
 
 const emptyForm: StaffForm = {
-  user: '',
+  user_id: '',
   staff_code: '',
   full_name: '',
   email: '',
   phone: '',
 
-  Role: 'STAFF',
-
-  Department: 'TELECALLING',
-
-  Designation: '',
+  role: 'STAFF',
+  department: 'TELECALLING',
+  designation: '',
 
   joining_date: '',
-
   employment_type: 'FULL TIME',
 
   skills: '',
-
   profile_photo: null,
-
   address: '',
-
   notes: '',
 
   is_active: true,
 };
-
-/* =========================================================
-   HELPERS
-========================================================= */
 
 function generateStaffCode(existingStaff: Staff[]) {
   const year = new Date().getFullYear();
@@ -192,10 +142,13 @@ function generateStaffCode(existingStaff: Staff[]) {
       ? Math.max(...numbers) + 1
       : 1;
 
-  return `STF-${year}-${String(nextNumber).padStart(4, '0')}`;
+  return `STF-${year}-${String(nextNumber).padStart(
+    4,
+    '0'
+  )}`;
 }
 
-function formatDate(date?: string) {
+function formatDate(date?: string | null) {
   if (!date) return '—';
 
   const parsed = new Date(date);
@@ -225,53 +178,163 @@ function getInitials(name: string) {
 }
 
 function getErrorMessage(error: any) {
-  if (error?.response?.data) {
-    const data = error.response.data;
-
-    const fieldErrors = Object.entries(data)
-      .map(([field, value]: [string, any]) => {
-        if (value?.message) {
-          return `${field}: ${value.message}`;
-        }
-
-        return '';
-      })
-      .filter(Boolean);
-
-    if (fieldErrors.length > 0) {
-      return fieldErrors.join('\n');
-    }
-  }
-
   return (
-    error?.response?.message ||
     error?.message ||
+    error?.error_description ||
     'Something went wrong.'
   );
 }
 
-/* =========================================================
-   COMPONENT
-========================================================= */
+function Input({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+        {required && (
+          <span className="text-red-500"> *</span>
+        )}
+      </span>
+
+      <input
+        type={type}
+        value={value}
+        required={required}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+      />
+    </label>
+  );
+}
+
+function Textarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+      </span>
+
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        rows={4}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+      />
+    </label>
+  );
+}
+
+function SelectInput({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+      </span>
+
+      <select
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+}: {
+  title: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+
+      <div className="mt-2 text-2xl font-bold text-slate-900">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function Detail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </div>
+
+      <div className="mt-1 break-words text-sm font-medium text-slate-800">
+        {value || '—'}
+      </div>
+    </div>
+  );
+}
 
 export default function Staff() {
   const [staff, setStaff] = useState<Staff[]>([]);
 
-  /*
-   * Login users are NOT loaded during initial page load.
-   *
-   * They are loaded only when Add/Edit Staff is opened.
-   */
-  const [users, setUsers] = useState<PBUser[]>([]);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [loading, setLoading] = useState(true);
-
-  const [loadingUsers, setLoadingUsers] =
+  const [saving, setSaving] =
     useState(false);
 
-  const [saving, setSaving] = useState(false);
-
-  const [search, setSearch] = useState('');
+  const [search, setSearch] =
+    useState('');
 
   const [departmentFilter, setDepartmentFilter] =
     useState('ALL');
@@ -297,20 +360,52 @@ export default function Staff() {
   const [form, setForm] =
     useState<StaffForm>(emptyForm);
 
-  /* =======================================================
-     LOAD STAFF
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * LOAD STAFF
+   * ---------------------------------------------------------
+   */
 
   const loadStaff = async () => {
     try {
       setLoading(true);
 
-      const records =
-        await pb.collection('staff').getFullList<Staff>({
-          sort: '-created',
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          staff_code,
+          full_name,
+          email,
+          phone,
+          role,
+          department,
+          designation,
+          joining_date,
+          employment_type,
+          skills,
+          profile_photo,
+          address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .order('created_at', {
+          ascending: false,
         });
 
-      setStaff(records);
+      if (error) {
+        throw error;
+      }
+
+      setStaff(
+        (data || []) as Staff[]
+      );
     } catch (error: any) {
       console.error(
         'Failed to load staff:',
@@ -318,69 +413,24 @@ export default function Staff() {
       );
 
       alert(
-        getErrorMessage(error) ||
-          'Failed to load staff.'
+        `Failed to load staff.\n\n${getErrorMessage(
+          error
+        )}`
       );
     } finally {
       setLoading(false);
     }
   };
 
-  /* =======================================================
-     LOAD LOGIN USERS
-  ======================================================= */
-
-  const loadUsers = async () => {
-    try {
-      setLoadingUsers(true);
-
-      /*
-       * Only request the fields required by this page.
-       *
-       * This prevents unnecessary user information
-       * from being downloaded.
-       */
-      const result =
-        await pb.collection('users').getList<PBUser>(
-          1,
-          200,
-          {
-            sort: 'email',
-            fields:
-              'id,email,name,username,verified',
-          }
-        );
-
-      setUsers(result.items);
-    } catch (error: any) {
-      console.error(
-        'Failed to load login users:',
-        error
-      );
-
-      setUsers([]);
-
-      alert(
-        `Unable to load login accounts.\n\n${getErrorMessage(
-          error
-        )}\n\nCheck the PocketBase "users" List/View API rules.`
-      );
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  /* =======================================================
-     INITIAL LOAD
-  ======================================================= */
-
   useEffect(() => {
     loadStaff();
   }, []);
 
-  /* =======================================================
-     FILTERED STAFF
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * FILTERED STAFF
+   * ---------------------------------------------------------
+   */
 
   const filteredStaff = useMemo(() => {
     const query =
@@ -401,17 +451,18 @@ export default function Staff() {
         person.phone
           ?.toLowerCase()
           .includes(query) ||
-        person.Designation
+        person.designation
           ?.toLowerCase()
           .includes(query);
 
       const matchesDepartment =
         departmentFilter === 'ALL' ||
-        person.Department === departmentFilter;
+        person.department ===
+          departmentFilter;
 
       const matchesRole =
         roleFilter === 'ALL' ||
-        person.Role === roleFilter;
+        person.role === roleFilter;
 
       const matchesStatus =
         statusFilter === 'ALL' ||
@@ -435,9 +486,11 @@ export default function Staff() {
     statusFilter,
   ]);
 
-  /* =======================================================
-     STATISTICS
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * STATISTICS
+   * ---------------------------------------------------------
+   */
 
   const stats = useMemo(() => {
     const total = staff.length;
@@ -450,30 +503,27 @@ export default function Staff() {
       (person) => !person.is_active
     ).length;
 
-    const managers = staff.filter(
-      (person) =>
-        person.Role === 'MANAGER'
-    ).length;
 
     const admins = staff.filter(
       (person) =>
-        person.Role === 'ADMIN'
+        person.role === 'ADMIN'
     ).length;
 
     return {
       total,
       active,
       inactive,
-      managers,
       admins,
     };
   }, [staff]);
 
-  /* =======================================================
-     OPEN ADD FORM
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * OPEN ADD FORM
+   * ---------------------------------------------------------
+   */
 
-  const openAddForm = async () => {
+  const openAddForm = () => {
     setEditingStaff(null);
 
     setForm({
@@ -482,25 +532,23 @@ export default function Staff() {
         generateStaffCode(staff),
     });
 
-    /*
-     * Users are loaded ONLY now.
-     */
-    await loadUsers();
-
     setShowForm(true);
   };
 
-  /* =======================================================
-     OPEN EDIT FORM
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * OPEN EDIT FORM
+   * ---------------------------------------------------------
+   */
 
-  const openEditForm = async (
+  const openEditForm = (
     person: Staff
   ) => {
     setEditingStaff(person);
 
     setForm({
-      user: person.user || '',
+      user_id:
+        person.user_id || '',
 
       staff_code:
         person.staff_code || '',
@@ -514,14 +562,14 @@ export default function Staff() {
       phone:
         person.phone || '',
 
-      Role:
-        person.Role || 'STAFF',
+      role:
+        person.role || 'STAFF',
 
-      Department:
-        person.Department || 'OTHER',
+      department:
+        person.department || 'OTHER',
 
-      Designation:
-        person.Designation || '',
+      designation:
+        person.designation || '',
 
       joining_date:
         person.joining_date
@@ -538,8 +586,7 @@ export default function Staff() {
       skills:
         person.skills || '',
 
-      profile_photo:
-        null,
+      profile_photo: null,
 
       address:
         person.address || '',
@@ -551,17 +598,14 @@ export default function Staff() {
         person.is_active ?? true,
     });
 
-    /*
-     * Load users only when editing.
-     */
-    await loadUsers();
-
     setShowForm(true);
   };
 
-  /* =======================================================
-     FORM CHANGE
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * FORM CHANGE
+   * ---------------------------------------------------------
+   */
 
   const handleFormChange = (
     field: keyof StaffForm,
@@ -577,36 +621,11 @@ export default function Staff() {
     }));
   };
 
-  /* =======================================================
-     USER SELECTION
-  ======================================================= */
-
-  const handleUserChange = (
-    userId: string
-  ) => {
-    const selectedUser =
-      users.find(
-        (user) => user.id === userId
-      );
-
-    setForm((previous) => ({
-      ...previous,
-
-      user: userId,
-
-      full_name:
-        selectedUser?.name ||
-        previous.full_name,
-
-      email:
-        selectedUser?.email ||
-        previous.email,
-    }));
-  };
-
-  /* =======================================================
-     SAVE STAFF
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * SAVE STAFF
+   * ---------------------------------------------------------
+   */
 
   const saveStaff = async (
     event: FormEvent
@@ -615,27 +634,10 @@ export default function Staff() {
 
     if (saving) return;
 
-    if (!pb.authStore.isValid) {
-      alert(
-        'Your session has expired. Please login again.'
-      );
-
-      return;
-    }
-
-    if (!form.user.trim()) {
-      alert(
-        'Please select a login account.'
-      );
-
-      return;
-    }
-
     if (!form.staff_code.trim()) {
       alert(
         'Staff code is required.'
       );
-
       return;
     }
 
@@ -643,7 +645,6 @@ export default function Staff() {
       alert(
         'Please enter the staff name.'
       );
-
       return;
     }
 
@@ -651,7 +652,6 @@ export default function Staff() {
       alert(
         'Please enter the staff email.'
       );
-
       return;
     }
 
@@ -659,166 +659,166 @@ export default function Staff() {
       alert(
         'Please enter the staff phone number.'
       );
-
       return;
     }
 
-    if (!form.Designation.trim()) {
+    if (!form.designation.trim()) {
       alert(
         'Please enter the designation.'
       );
-
       return;
     }
 
     /*
-     * Prevent assigning the same login account
-     * to two different staff records.
+     * Prevent duplicate staff code.
      */
-    const duplicateUser = staff.find(
-      (person) =>
-        person.user === form.user &&
-        person.id !== editingStaff?.id
-    );
 
-    if (duplicateUser) {
-      alert(
-        `This login account is already assigned to ${duplicateUser.full_name}.`
+    const duplicateCode =
+      staff.find(
+        (person) =>
+          person.staff_code
+            ?.toLowerCase() ===
+            form.staff_code
+              .trim()
+              .toLowerCase() &&
+          person.id !==
+            editingStaff?.id
       );
 
+    if (duplicateCode) {
+      alert(
+        'This staff code is already assigned.'
+      );
       return;
+    }
+
+    /*
+     * Prevent duplicate login user
+     * when user_id is provided.
+     */
+
+    if (form.user_id.trim()) {
+      const duplicateUser =
+        staff.find(
+          (person) =>
+            person.user_id ===
+              form.user_id.trim() &&
+            person.id !==
+              editingStaff?.id
+        );
+
+      if (duplicateUser) {
+        alert(
+          `This login account is already linked to ${duplicateUser.full_name}.`
+        );
+        return;
+      }
     }
 
     try {
       setSaving(true);
 
-      const formData =
-        new FormData();
+      const payload = {
+        user_id:
+          form.user_id.trim() ||
+          null,
 
-      /*
-       * Required fields
-       */
+        staff_code:
+          form.staff_code.trim(),
 
-      formData.append(
-        'user',
-        form.user
-      );
+        full_name:
+          form.full_name.trim(),
 
-      formData.append(
-        'staff_code',
-        form.staff_code.trim()
-      );
+        email:
+          form.email.trim(),
 
-      formData.append(
-        'full_name',
-        form.full_name.trim()
-      );
+        phone:
+          form.phone.trim(),
 
-      formData.append(
-        'email',
-        form.email.trim()
-      );
+        role:
+          form.role,
 
-      formData.append(
-        'phone',
-        form.phone.trim()
-      );
+        department:
+          form.department,
 
-      formData.append(
-        'Role',
-        form.Role
-      );
+        designation:
+          form.designation.trim(),
 
-      formData.append(
-        'Department',
-        form.Department
-      );
+        joining_date:
+          form.joining_date ||
+          null,
 
-      formData.append(
-        'Designation',
-        form.Designation.trim()
-      );
+        employment_type:
+          form.employment_type,
 
-      formData.append(
-        'employment_type',
-        form.employment_type
-      );
+        skills:
+          form.skills.trim() ||
+          null,
 
-      formData.append(
-        'is_active',
-        String(form.is_active)
-      );
+        address:
+          form.address.trim() ||
+          null,
 
-      /*
-       * Optional fields
-       */
+        notes:
+          form.notes.trim() ||
+          null,
 
-      if (form.joining_date) {
-        formData.append(
-          'joining_date',
-          form.joining_date
-        );
-      }
-
-      if (form.skills.trim()) {
-        formData.append(
-          'skills',
-          form.skills.trim()
-        );
-      }
-
-      if (form.address.trim()) {
-        formData.append(
-          'address',
-          form.address.trim()
-        );
-      }
-
-      if (form.notes.trim()) {
-        formData.append(
-          'notes',
-          form.notes.trim()
-        );
-      }
-
-      /*
-       * Profile photo
-       */
-
-      if (form.profile_photo) {
-        formData.append(
-          'profile_photo',
-          form.profile_photo
-        );
-      }
-
-      /* ===================================================
-         UPDATE
-      =================================================== */
+        is_active:
+          form.is_active,
+      };
 
       if (editingStaff) {
-        await pb
-          .collection('staff')
-          .update(
-            editingStaff.id,
-            formData
-          );
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('staff')
+          .update(payload)
+          .eq(
+            'id',
+            editingStaff.id
+          )
+          .select()
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        setStaff((previous) =>
+          previous.map((person) =>
+            person.id ===
+            editingStaff.id
+              ? (data as Staff)
+              : person
+          )
+        );
+
+        setSelectedStaff(
+          data as Staff
+        );
 
         alert(
           'Staff member updated successfully.'
         );
-      }
+      } else {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('staff')
+          .insert(payload)
+          .select()
+          .single();
 
-      /* ===================================================
-         CREATE
-      =================================================== */
+        if (error) {
+          throw error;
+        }
 
-      else {
-        await pb
-          .collection('staff')
-          .create(
-            formData
-          );
+        setStaff((previous) => [
+          data as Staff,
+          ...previous,
+        ]);
 
         alert(
           'Staff member added successfully.'
@@ -826,12 +826,8 @@ export default function Staff() {
       }
 
       setShowForm(false);
-
       setEditingStaff(null);
-
       setForm(emptyForm);
-
-      await loadStaff();
     } catch (error: any) {
       console.error(
         'Failed to save staff:',
@@ -848,34 +844,47 @@ export default function Staff() {
     }
   };
 
-  /* =======================================================
-     DELETE STAFF
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * DELETE STAFF
+   * ---------------------------------------------------------
+   */
 
   const deleteStaff = async (
     person: Staff
   ) => {
     const confirmed =
       window.confirm(
-        `Delete ${person.full_name}?\n\nThis deletes the staff profile only. It does NOT delete the login account.`
+        `Delete ${person.full_name}?\n\nThis deletes the staff profile only. It does NOT delete the Supabase login account.`
       );
 
     if (!confirmed) return;
 
     try {
-      await pb
-        .collection('staff')
-        .delete(person.id);
+      const {
+        error,
+      } = await supabase
+        .from('staff')
+        .delete()
+        .eq('id', person.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setStaff((previous) =>
+        previous.filter(
+          (item) =>
+            item.id !== person.id
+        )
+      );
+
+      setSelectedStaff(null);
+      setShowDetails(false);
 
       alert(
         'Staff member deleted successfully.'
       );
-
-      setSelectedStaff(null);
-
-      setShowDetails(false);
-
-      await loadStaff();
     } catch (error: any) {
       console.error(
         'Failed to delete staff:',
@@ -890,31 +899,50 @@ export default function Staff() {
     }
   };
 
-  /* =======================================================
-     TOGGLE ACTIVE
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * ACTIVATE / DEACTIVATE
+   * ---------------------------------------------------------
+   */
 
   const toggleActive = async (
     person: Staff
   ) => {
     try {
-      await pb
-        .collection('staff')
-        .update(person.id, {
-          is_active:
-            !person.is_active,
-        });
+      const newStatus =
+        !person.is_active;
 
-      await loadStaff();
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('staff')
+        .update({
+          is_active: newStatus,
+        })
+        .eq('id', person.id)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setStaff((previous) =>
+        previous.map((item) =>
+          item.id === person.id
+            ? (data as Staff)
+            : item
+        )
+      );
 
       if (
-        selectedStaff?.id === person.id
+        selectedStaff?.id ===
+        person.id
       ) {
-        setSelectedStaff({
-          ...person,
-          is_active:
-            !person.is_active,
-        });
+        setSelectedStaff(
+          data as Staff
+        );
       }
     } catch (error: any) {
       console.error(
@@ -930,9 +958,14 @@ export default function Staff() {
     }
   };
 
-  /* =======================================================
-     PHOTO CHANGE
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * PROFILE PHOTO
+   *
+   * Supabase Storage will be connected
+   * after the Staff CRUD is verified.
+   * ---------------------------------------------------------
+   */
 
   const handlePhotoChange = (
     event: ChangeEvent<HTMLInputElement>
@@ -946,7 +979,6 @@ export default function Staff() {
         'profile_photo',
         null
       );
-
       return;
     }
 
@@ -960,7 +992,6 @@ export default function Staff() {
       );
 
       event.target.value = '';
-
       return;
     }
 
@@ -973,7 +1004,6 @@ export default function Staff() {
       );
 
       event.target.value = '';
-
       return;
     }
 
@@ -983,47 +1013,48 @@ export default function Staff() {
     );
   };
 
-  /* =======================================================
-     CLOSE FORM
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * CLOSE FORM
+   * ---------------------------------------------------------
+   */
 
   const closeForm = () => {
     if (saving) return;
 
     setShowForm(false);
-
     setEditingStaff(null);
-
     setForm(emptyForm);
   };
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+  /*
+   * ---------------------------------------------------------
+   * RENDER
+   * ---------------------------------------------------------
+   */
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">
       <div className="mx-auto max-w-7xl">
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
+        {/* HEADER */}
 
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">
+            <p className="text-sm font-medium text-slate-500">
+              SRL INFRA DEVELOPERS
+            </p>
+
+            <h1 className="mt-1 text-3xl font-bold text-slate-900">
               Staff Management
             </h1>
 
             <p className="mt-1 text-sm text-slate-500">
-              Manage SRL INFRA DEVELOPERS
-              employees and staff profiles.
+              Manage employees and staff profiles.
             </p>
           </div>
 
           <div className="flex gap-2">
-
             <button
               type="button"
               onClick={loadStaff}
@@ -1042,16 +1073,12 @@ export default function Staff() {
             >
               + Add Staff
             </button>
-
           </div>
         </div>
 
-        {/* =================================================
-            STATISTICS
-        ================================================= */}
+        {/* STATISTICS */}
 
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
-
           <StatCard
             title="Total Staff"
             value={stats.total}
@@ -1067,24 +1094,16 @@ export default function Staff() {
             value={stats.inactive}
           />
 
-          <StatCard
-            title="Managers"
-            value={stats.managers}
-          />
-
+         
           <StatCard
             title="Admins"
             value={stats.admins}
           />
-
         </div>
 
-        {/* =================================================
-            FILTERS
-        ================================================= */}
+        {/* FILTERS */}
 
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-
           <div className="grid gap-3 md:grid-cols-4">
 
             <input
@@ -1168,23 +1187,18 @@ export default function Staff() {
                 Inactive
               </option>
             </select>
-
           </div>
         </div>
 
-        {/* =================================================
-            STAFF TABLE
-        ================================================= */}
+        {/* STAFF TABLE */}
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
           {loading ? (
             <div className="p-10 text-center text-sm text-slate-500">
               Loading staff...
             </div>
           ) : filteredStaff.length === 0 ? (
             <div className="p-12 text-center">
-
               <div className="mb-3 text-4xl">
                 👥
               </div>
@@ -1194,18 +1208,14 @@ export default function Staff() {
               </h3>
 
               <p className="mt-1 text-sm text-slate-500">
-                Add a staff member or change
-                your filters.
+                Add a staff member or change your filters.
               </p>
-
             </div>
           ) : (
             <div className="overflow-x-auto">
-
               <table className="w-full min-w-[1000px] text-left">
 
                 <thead className="border-b border-slate-200 bg-slate-50">
-
                   <tr>
                     <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Staff
@@ -1235,11 +1245,9 @@ export default function Staff() {
                       Actions
                     </th>
                   </tr>
-
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
-
                   {filteredStaff.map(
                     (person) => (
                       <tr
@@ -1250,28 +1258,12 @@ export default function Staff() {
                         {/* STAFF */}
 
                         <td className="px-5 py-4">
-
                           <div className="flex items-center gap-3">
 
                             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-sm font-bold text-white">
-
-                              {person.profile_photo ? (
-                                <img
-                                  src={pb.files.getURL(
-                                    person,
-                                    person.profile_photo
-                                  )}
-                                  alt={
-                                    person.full_name
-                                  }
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                getInitials(
-                                  person.full_name
-                                )
+                              {getInitials(
+                                person.full_name
                               )}
-
                             </div>
 
                             <div>
@@ -1280,58 +1272,43 @@ export default function Staff() {
                               </div>
 
                               <div className="text-xs text-slate-500">
-                                {
-                                  person.staff_code
-                                }
+                                {person.staff_code}
                               </div>
 
                               <div className="text-xs text-slate-400">
-                                {
-                                  person.Designation
-                                }
+                                {person.designation}
                               </div>
                             </div>
 
                           </div>
-
                         </td>
 
                         {/* DEPARTMENT */}
 
                         <td className="px-5 py-4">
-
                           <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                            {
-                              person.Department
-                            }
+                            {person.department}
                           </span>
-
                         </td>
 
                         {/* ROLE */}
 
                         <td className="px-5 py-4">
-
                           <span
                             className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                              person.Role ===
+                              person.role ===
                               'ADMIN'
                                 ? 'bg-purple-100 text-purple-700'
-                                : person.Role ===
-                                  'MANAGER'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-slate-100 text-slate-700'
+                                : 'bg-slate-100 text-slate-600' 
                             }`}
                           >
-                            {person.Role}
+                            {person.role}
                           </span>
-
                         </td>
 
                         {/* CONTACT */}
 
                         <td className="px-5 py-4">
-
                           <div className="text-sm text-slate-700">
                             {person.phone}
                           </div>
@@ -1339,7 +1316,6 @@ export default function Staff() {
                           <div className="max-w-[220px] truncate text-xs text-slate-400">
                             {person.email}
                           </div>
-
                         </td>
 
                         {/* JOINING */}
@@ -1353,7 +1329,6 @@ export default function Staff() {
                         {/* STATUS */}
 
                         <td className="px-5 py-4">
-
                           <button
                             type="button"
                             onClick={() =>
@@ -1371,13 +1346,11 @@ export default function Staff() {
                               ? 'ACTIVE'
                               : 'INACTIVE'}
                           </button>
-
                         </td>
 
                         {/* ACTIONS */}
 
                         <td className="px-5 py-4">
-
                           <div className="flex justify-end gap-2">
 
                             <button
@@ -1408,20 +1381,16 @@ export default function Staff() {
                             </button>
 
                           </div>
-
                         </td>
 
                       </tr>
                     )
                   )}
-
                 </tbody>
 
               </table>
-
             </div>
           )}
-
         </div>
 
       </div>
@@ -1435,8 +1404,6 @@ export default function Staff() {
 
           <div className="max-h-[95vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
 
-            {/* HEADER */}
-
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
 
               <div>
@@ -1447,8 +1414,7 @@ export default function Staff() {
                 </h2>
 
                 <p className="text-sm text-slate-500">
-                  Staff login and employee
-                  information.
+                  Employee information and organization details.
                 </p>
               </div>
 
@@ -1463,17 +1429,14 @@ export default function Staff() {
 
             </div>
 
-            {/* FORM */}
-
             <form
               onSubmit={saveStaff}
               className="space-y-6 p-6"
             >
 
-              {/* LOGIN ACCOUNT */}
+              {/* AUTH LINK */}
 
               <section>
-
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Login Account
                 </h3>
@@ -1481,90 +1444,32 @@ export default function Staff() {
                 <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
 
                   <label className="mb-2 block text-sm font-semibold text-slate-800">
-                    PocketBase Login Account *
+                    Supabase Auth User ID
                   </label>
 
-                  <select
-                    value={form.user}
+                  <input
+                    type="text"
+                    value={form.user_id}
                     onChange={(event) =>
-                      handleUserChange(
+                      handleFormChange(
+                        'user_id',
                         event.target.value
                       )
                     }
-                    disabled={
-                      loadingUsers ||
-                      saving
-                    }
-                    required
+                    placeholder="Optional — UUID of the Supabase Auth user"
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400"
-                  >
-
-                    <option value="">
-                      {loadingUsers
-                        ? 'Loading login accounts...'
-                        : 'Select login account'}
-                    </option>
-
-                    {users.map((user) => {
-
-                      const alreadyAssigned =
-                        staff.some(
-                          (person) =>
-                            person.user ===
-                              user.id &&
-                            person.id !==
-                              editingStaff?.id
-                        );
-
-                      return (
-                        <option
-                          key={user.id}
-                          value={user.id}
-                          disabled={
-                            alreadyAssigned
-                          }
-                        >
-                          {user.name
-                            ? `${user.name} — ${user.email}${
-                                alreadyAssigned
-                                  ? ' — Already assigned'
-                                  : ''
-                              }`
-                            : `${user.email}${
-                                alreadyAssigned
-                                  ? ' — Already assigned'
-                                  : ''
-                              }`}
-                        </option>
-                      );
-                    })}
-
-                  </select>
+                  />
 
                   <p className="mt-2 text-xs text-blue-700">
-                    The selected PocketBase
-                    account will be linked to
-                    this staff profile.
+                    Leave this empty when creating an employee profile without a login account. The login account can be linked later.
                   </p>
 
-                  {!loadingUsers &&
-                    users.length === 0 && (
-                      <p className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">
-                        No login accounts are
-                        available. Check the
-                        PocketBase users collection
-                        List/View API rules.
-                      </p>
-                    )}
-
                 </div>
-
               </section>
 
               {/* BASIC INFORMATION */}
 
               <section>
-
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Basic Information
                 </h3>
@@ -1622,10 +1527,10 @@ export default function Staff() {
 
                   <Input
                     label="Designation"
-                    value={form.Designation}
+                    value={form.designation}
                     onChange={(value) =>
                       handleFormChange(
-                        'Designation',
+                        'designation',
                         value
                       )
                     }
@@ -1647,13 +1552,11 @@ export default function Staff() {
                   />
 
                 </div>
-
               </section>
 
-              {/* ROLE */}
+              {/* ORGANIZATION */}
 
               <section>
-
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Organization
                 </h3>
@@ -1662,31 +1565,31 @@ export default function Staff() {
 
                   <SelectInput
                     label="Role"
-                    value={form.Role}
+                    value={form.role}
+                    options={
+                      ROLES
+                    }
                     onChange={(value) =>
                       handleFormChange(
-                        'Role',
-                        value as StaffForm['Role']
+                        'role',
+                        value as Role
                       )
-                    }
-                    options={
-                      ROLES as unknown as string[]
                     }
                   />
 
                   <SelectInput
                     label="Department"
                     value={
-                      form.Department
+                      form.department
+                    }
+                    options={
+                      DEPARTMENTS
                     }
                     onChange={(value) =>
                       handleFormChange(
-                        'Department',
-                        value as StaffForm['Department']
+                        'department',
+                        value as Department
                       )
-                    }
-                    options={
-                      DEPARTMENTS as unknown as string[]
                     }
                   />
 
@@ -1695,25 +1598,23 @@ export default function Staff() {
                     value={
                       form.employment_type
                     }
+                    options={
+                      EMPLOYMENT_TYPES
+                    }
                     onChange={(value) =>
                       handleFormChange(
                         'employment_type',
-                        value as StaffForm['employment_type']
+                        value as EmploymentType
                       )
-                    }
-                    options={
-                      EMPLOYMENT_TYPES as unknown as string[]
                     }
                   />
 
                 </div>
-
               </section>
 
-              {/* SKILLS */}
+              {/* ADDITIONAL INFORMATION */}
 
               <section>
-
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Additional Information
                 </h3>
@@ -1755,13 +1656,11 @@ export default function Staff() {
                   />
 
                 </div>
-
               </section>
 
               {/* PROFILE PHOTO */}
 
               <section>
-
                 <label className="mb-2 block text-sm font-semibold text-slate-800">
                   Profile Photo
                 </label>
@@ -1777,10 +1676,8 @@ export default function Staff() {
                 />
 
                 <p className="mt-1 text-xs text-slate-400">
-                  JPG, PNG or WEBP. Maximum
-                  5 MB.
+                  JPG, PNG or WEBP. Maximum 5 MB. Storage upload will be connected after Staff CRUD verification.
                 </p>
-
               </section>
 
               {/* ACTIVE */}
@@ -1810,10 +1707,7 @@ export default function Staff() {
                     </div>
 
                     <div className="text-xs text-slate-500">
-                      Inactive staff will remain
-                      in the system but can be
-                      excluded from active
-                      operations.
+                      Inactive staff remain in the system but can be excluded from active operations.
                     </div>
                   </div>
 
@@ -1836,11 +1730,7 @@ export default function Staff() {
 
                 <button
                   type="submit"
-                  disabled={
-                    saving ||
-                    loadingUsers ||
-                    users.length === 0
-                  }
+                  disabled={saving}
                   className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving
@@ -1855,7 +1745,6 @@ export default function Staff() {
             </form>
 
           </div>
-
         </div>
       )}
 
@@ -1869,35 +1758,17 @@ export default function Staff() {
 
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
 
-              {/* HEADER */}
-
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
 
                 <div className="flex items-center gap-4">
 
-                  <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-lg font-bold text-white">
-
-                    {selectedStaff.profile_photo ? (
-                      <img
-                        src={pb.files.getURL(
-                          selectedStaff,
-                          selectedStaff.profile_photo
-                        )}
-                        alt={
-                          selectedStaff.full_name
-                        }
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      getInitials(
-                        selectedStaff.full_name
-                      )
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
+                    {getInitials(
+                      selectedStaff.full_name
                     )}
-
                   </div>
 
                   <div>
-
                     <h2 className="text-xl font-bold text-slate-900">
                       {
                         selectedStaff.full_name
@@ -1906,10 +1777,9 @@ export default function Staff() {
 
                     <p className="text-sm text-slate-500">
                       {
-                        selectedStaff.Designation
+                        selectedStaff.designation
                       }
                     </p>
-
                   </div>
 
                 </div>
@@ -1917,9 +1787,7 @@ export default function Staff() {
                 <button
                   type="button"
                   onClick={() =>
-                    setShowDetails(
-                      false
-                    )
+                    setShowDetails(false)
                   }
                   className="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100"
                 >
@@ -1927,8 +1795,6 @@ export default function Staff() {
                 </button>
 
               </div>
-
-              {/* DETAILS */}
 
               <div className="grid gap-4 p-6 md:grid-cols-2">
 
@@ -1942,14 +1808,14 @@ export default function Staff() {
                 <Detail
                   label="Role"
                   value={
-                    selectedStaff.Role
+                    selectedStaff.role
                   }
                 />
 
                 <Detail
                   label="Department"
                   value={
-                    selectedStaff.Department
+                    selectedStaff.department
                   }
                 />
 
@@ -1990,6 +1856,15 @@ export default function Staff() {
                   }
                 />
 
+                <Detail
+                  label="Login Account"
+                  value={
+                    selectedStaff.user_id
+                      ? 'Linked to Supabase Auth'
+                      : 'Not linked'
+                  }
+                />
+
                 <div className="md:col-span-2">
                   <Detail
                     label="Skills"
@@ -2022,9 +1897,38 @@ export default function Staff() {
 
               </div>
 
-              {/* ACTIONS */}
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
 
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-200 p-6 sm:flex-row sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleActive(
+                      selectedStaff
+                    )
+                  }
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${
+                    selectedStaff.is_active
+                      ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  }`}
+                >
+                  {selectedStaff.is_active
+                    ? 'Deactivate'
+                    : 'Activate'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDetails(false);
+                    openEditForm(
+                      selectedStaff
+                    );
+                  }}
+                  className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Edit
+                </button>
 
                 <button
                   type="button"
@@ -2033,208 +1937,17 @@ export default function Staff() {
                       selectedStaff
                     )
                   }
-                  className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                  className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
                 >
-                  Delete Staff
+                  Delete
                 </button>
-
-                <div className="flex gap-3">
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDetails(
-                        false
-                      );
-
-                      openEditForm(
-                        selectedStaff
-                      );
-                    }}
-                    className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-                  >
-                    Edit Staff
-                  </button>
-
-                </div>
 
               </div>
 
             </div>
-
           </div>
         )}
 
-    </div>
-  );
-}
-
-/* =========================================================
-   STAT CARD
-========================================================= */
-
-function StatCard({
-  title,
-  value,
-}: {
-  title: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-sm text-slate-500">
-        {title}
-      </div>
-
-      <div className="mt-2 text-2xl font-bold text-slate-900">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   INPUT
-========================================================= */
-
-function Input({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  required = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-semibold text-slate-800">
-        {label}
-        {required && (
-          <span className="ml-1 text-red-500">
-            *
-          </span>
-        )}
-      </label>
-
-      <input
-        type={type}
-        value={value}
-        required={required}
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      />
-    </div>
-  );
-}
-
-/* =========================================================
-   SELECT
-========================================================= */
-
-function SelectInput({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-semibold text-slate-800">
-        {label}
-      </label>
-
-      <select
-        value={value}
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400"
-      >
-        {options.map((option) => (
-          <option
-            key={option}
-            value={option}
-          >
-            {option}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-/* =========================================================
-   TEXTAREA
-========================================================= */
-
-function Textarea({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-semibold text-slate-800">
-        {label}
-      </label>
-
-      <textarea
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        rows={3}
-        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      />
-    </div>
-  );
-}
-
-/* =========================================================
-   DETAIL
-========================================================= */
-
-function Detail({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        {label}
-      </div>
-
-      <div className="break-words text-sm font-medium text-slate-800">
-        {value}
-      </div>
     </div>
   );
 }

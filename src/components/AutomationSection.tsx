@@ -183,7 +183,7 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                   src={currentCategory.heroImage}
                   alt={currentCategory.name}
                   className="block w-full h-auto"
-                  loading="lazy"
+                  loading="eager"
                   referrerPolicy="no-referrer"
                 />
 
@@ -314,7 +314,7 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                     src={product.image}
                     alt={product.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
-                    loading="lazy"
+                    loading="eager"
                     referrerPolicy="no-referrer"
                   />
 

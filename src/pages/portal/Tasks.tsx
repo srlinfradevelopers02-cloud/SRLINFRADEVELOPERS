@@ -1,1969 +1,1302 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
 
-import { useNavigate } from 'react-router-dom';
-import { pb } from '../../lib/pocketbase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  UserRound,
+  X,
+} from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
-/* =========================================================
-   TYPES
-========================================================= */
+type Staff = {
+  id: string;
+  user_id?: string;
+  full_name: string;
+  email?: string;
+  role?: string;
+  department?: string;
+  is_active?: boolean;
+};
 
 type Project = {
-  id: string;
-  projectCode: string;
-  projectName: string;
-  client: string;
-  projectType?: string;
-  location?: string;
-  status: string;
+  id: number;
+  project_name?: string;
+  project_code?: string;
 };
+
+type Client = {
+  id: string;
+  name?: string;
+  client_name?: string;
+  company?: string;
+  company_name?: string;
+  full_name?: string;
+};
+
+type TaskStatus =
+  | 'TODO'
+  | 'IN_PROGRESS'
+  | 'ON_HOLD'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 type Task = {
-  id: string;
-
-  taskCode: string;
-  taskName: string;
-
-  project: string;
-
-  assignedTo?: string;
-
-  priority: string;
-  status: string;
-
-  startDate?: string;
-  dueDate?: string;
-  completionDate?: string;
-
-  description?: string;
-  notes?: string;
-
-  created: string;
-  updated: string;
+  id: number;
+  task_code: string | null;
+  title: string;
+  description: string | null;
+  assigned_to: string | null;
+  department: string | null;
+  project_id: number | null;
+  client_id: string | null;
+  due_date: string | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  progress: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
 };
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
+const STATUSES: { value: TaskStatus; label: string }[] = [
+  { value: 'TODO', label: 'To Do' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'ON_HOLD', label: 'On Hold' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+];
 
-const PRIORITIES = [
+const PRIORITIES: TaskPriority[] = [
   'LOW',
   'MEDIUM',
   'HIGH',
   'URGENT',
 ];
 
-const STATUSES = [
-  'TODO',
-  'IN PROGRESS',
-  'REVIEW',
-  'COMPLETED',
-  'CANCELLED',
+const DEPARTMENTS = [
+  'TELECALLING',
+  'SALES',
+  'INTERIOR DESIGN',
+  'AUTOMATION',
+  'ELEVATORS',
+  'PROJECT MANAGEMENT',
+  'ACCOUNTS',
+  'HR',
+  'MARKETING',
+  'OPERATIONS',
+  'OTHER',
 ];
 
-/* =========================================================
-   HELPERS
-========================================================= */
+const EMPTY_FORM = {
+  title: '',
+  description: '',
+  assigned_to: '',
+  department: '',
+  project_id: '',
+  client_id: '',
+  due_date: '',
+  priority: 'MEDIUM' as TaskPriority,
+  status: 'TODO' as TaskStatus,
+  progress: 0,
+};
 
-const formatDate = (value?: string) => {
-  if (!value) return '—';
+const inputClass =
+  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
 
-  const date = new Date(value);
+const cardClass =
+  'rounded-xl border border-slate-200 bg-white p-4 shadow-sm';
 
-  if (Number.isNaN(date.getTime())) {
-    return '—';
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error
+  ) {
+    return String(error.message);
   }
+
+  return 'An unexpected error occurred.';
+}
+
+function displayClient(client?: Client): string {
+  if (!client) return 'Unknown client';
+
+  return (
+    client.company_name ||
+    client.company ||
+    client.client_name ||
+    client.name ||
+    client.full_name ||
+    `Client #${client.id}`
+  );
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return 'Not set';
+
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
-};
+}
 
-const dateForInput = (value?: string) => {
-  if (!value) return '';
+function isOverdue(task: Task): boolean {
+  if (
+    !task.due_date ||
+    task.status === 'COMPLETED' ||
+    task.status === 'CANCELLED'
+  ) {
+    return false;
+  }
 
-  return value.slice(0, 10);
-};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-const todayISO = () =>
-  new Date().toISOString().slice(0, 10);
+  const dueDate = new Date(`${task.due_date}T00:00:00`);
 
-/* =========================================================
-   MAIN COMPONENT
-========================================================= */
+  return dueDate < today;
+}
+
+function statusLabel(status: TaskStatus): string {
+  return STATUSES.find((item) => item.value === status)?.label || status;
+}
+
+function priorityClass(priority: TaskPriority): string {
+  switch (priority) {
+    case 'URGENT':
+      return 'bg-red-100 text-red-700';
+    case 'HIGH':
+      return 'bg-orange-100 text-orange-700';
+    case 'MEDIUM':
+      return 'bg-blue-100 text-blue-700';
+    default:
+      return 'bg-slate-100 text-slate-600';
+  }
+}
 
 export default function Tasks() {
-  const navigate = useNavigate();
-
-  /* =======================================================
-     DATA
-  ======================================================= */
-
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-
-  /* =======================================================
-     UI STATE
-  ======================================================= */
+  const [clients, setClients] = useState<Client[]>([]);
+  const [currentStaff, setCurrentStaff] = useState<Staff | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
+
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [priorityFilter, setPriorityFilter] = useState('ALL');
 
-  const [statusFilter, setStatusFilter] =
-    useState('ALL');
+  const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
 
-  const [priorityFilter, setPriorityFilter] =
-    useState('ALL');
+  const role = currentStaff?.role?.toUpperCase();
 
-  const [projectFilter, setProjectFilter] =
-    useState('ALL');
-
-  const [showForm, setShowForm] =
-    useState(false);
-
-  const [showDetails, setShowDetails] =
-    useState(false);
-
-  const [editingTask, setEditingTask] =
-    useState<Task | null>(null);
-
-  const [selectedTask, setSelectedTask] =
-    useState<Task | null>(null);
-
-  /* =======================================================
-     FORM
-  ======================================================= */
-
-  const emptyForm = {
-    taskName: '',
-    project: '',
-    assignedTo: '',
-    priority: 'MEDIUM',
-    status: 'TODO',
-    startDate: '',
-    dueDate: '',
-    completionDate: '',
-    description: '',
-    notes: '',
-  };
-
-  const [form, setForm] =
-    useState(emptyForm);
-
-  /* =======================================================
-     LOAD DATA
-  ======================================================= */
+  const isAdmin = role === 'ADMIN';
+  const canManageTasks = role === 'ADMIN';
 
   const loadData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
     try {
-      setLoading(true);
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-      const [taskResult, projectResult] =
-        await Promise.all([
-          pb
-            .collection('tasks')
-            .getFullList<Task>({
-              sort: '-created',
-            }),
+      if (authError) throw authError;
+      if (!user) throw new Error('Please sign in to access Tasks.');
 
-          pb
-            .collection('projects')
-            .getFullList<Project>({
-              sort: '-created',
-            }),
-        ]);
+      const { data: profile, error: profileError } = await supabase
+        .from('staff')
+        .select(
+          'id,user_id,full_name,email,role,department,is_active',
+        )
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
 
-      setTasks(taskResult);
-      setProjects(projectResult);
-    } catch (error: any) {
-      console.error(
-        'Failed to load tasks:',
-        error
+      if (profileError) throw profileError;
+
+      if (!profile) {
+        throw new Error(
+          'Active staff profile not found. Check that staff.user_id matches your Supabase Auth user ID.',
+        );
+      }
+
+      setCurrentStaff(profile as Staff);
+
+      const [
+        tasksResult,
+        staffResult,
+        projectsResult,
+        clientsResult,
+      ] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: false }),
+
+        supabase
+          .from('staff')
+          .select('id,user_id,full_name,email,role,department,is_active')
+          .eq('is_active', true)
+          .order('full_name'),
+
+        supabase
+          .from('projects')
+          .select('id,project_name,project_code')
+          .order('id', { ascending: false }),
+
+        supabase.from('clients').select('*').order('id', { ascending: false }),
+      ]);
+
+      if (tasksResult.error) throw tasksResult.error;
+      if (staffResult.error) throw staffResult.error;
+      if (projectsResult.error) throw projectsResult.error;
+      if (clientsResult.error) throw clientsResult.error;
+
+      const allTasks = (tasksResult.data || []) as Task[];
+
+      // UI filtering is not a replacement for Supabase RLS.
+      setTasks(
+        profile.role?.toUpperCase() === 'ADMIN'
+          ? allTasks
+          : allTasks.filter(
+              (task) => task.assigned_to === profile.id,
+            ),
       );
 
-      alert(
-        `Failed to load tasks.\n\n${
-          error?.message ||
-          'Unknown error'
-        }`
-      );
+      setStaff((staffResult.data || []) as Staff[]);
+      setProjects((projectsResult.data || []) as Project[]);
+      setClients((clientsResult.data || []) as Client[]);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
-  /* =======================================================
-     LOOKUP PROJECT
-  ======================================================= */
-
-  const getProject = useCallback(
-    (projectId?: string) => {
-      return projects.find(
-        (project) =>
-          project.id === projectId
-      );
-    },
-    [projects]
-  );
-
-  /* =======================================================
-     GENERATE TASK CODE
-  ======================================================= */
-
-  const generateTaskCode = useCallback(() => {
-    const year = new Date().getFullYear();
-
-    const numbers = tasks
-      .map((task) => {
-        const match =
-          task.taskCode?.match(
-            /TSK-\d{4}-(\d+)/
-          );
-
-        return match
-          ? Number(match[1])
-          : 0;
-      })
-      .filter(
-        (number) =>
-          !Number.isNaN(number)
-      );
-
-    const nextNumber =
-      numbers.length > 0
-        ? Math.max(...numbers) + 1
-        : 1;
-
-    return `TSK-${year}-${String(
-      nextNumber
-    ).padStart(4, '0')}`;
-  }, [tasks]);
-
-  /* =======================================================
-     FILTER TASKS
-  ======================================================= */
-
-  const filteredTasks = useMemo(() => {
-    const query =
-      search.trim().toLowerCase();
+  const visibleTasks = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
     return tasks.filter((task) => {
-      const project = getProject(
-        task.project
-      );
-
-      const searchableText = [
-        task.taskCode,
-        task.taskName,
-        task.assignedTo,
-        task.priority,
-        task.status,
-        task.description,
-        project?.projectCode,
-        project?.projectName,
-        project?.location,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
       const matchesSearch =
         !query ||
-        searchableText.includes(query);
+        task.title.toLowerCase().includes(query) ||
+        (task.task_code || '').toLowerCase().includes(query) ||
+        (task.description || '').toLowerCase().includes(query);
 
       const matchesStatus =
-        statusFilter === 'ALL' ||
-        task.status === statusFilter;
+        statusFilter === 'ALL' || task.status === statusFilter;
 
       const matchesPriority =
-        priorityFilter === 'ALL' ||
-        task.priority ===
-          priorityFilter;
+        priorityFilter === 'ALL' || task.priority === priorityFilter;
 
-      const matchesProject =
-        projectFilter === 'ALL' ||
-        task.project === projectFilter;
-
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesPriority &&
-        matchesProject
-      );
+      return matchesSearch && matchesStatus && matchesPriority;
     });
-  }, [
-    tasks,
-    search,
-    statusFilter,
-    priorityFilter,
-    projectFilter,
-    getProject,
-  ]);
+  }, [tasks, search, statusFilter, priorityFilter]);
 
-  /* =======================================================
-     STATISTICS
-  ======================================================= */
+  const stats = useMemo(
+    () => ({
+      total: tasks.length,
+      todo: tasks.filter((task) => task.status === 'TODO').length,
+      inProgress: tasks.filter(
+        (task) => task.status === 'IN_PROGRESS',
+      ).length,
+      completed: tasks.filter(
+        (task) => task.status === 'COMPLETED',
+      ).length,
+      overdue: tasks.filter(isOverdue).length,
+    }),
+    [tasks],
+  );
 
-  const stats = useMemo(() => {
-    const total = tasks.length;
+  function getStaffName(id: string | null): string {
+    if (!id) return 'Unassigned';
 
-    const todo = tasks.filter(
-      (task) =>
-        task.status === 'TODO'
-    ).length;
-
-    const inProgress = tasks.filter(
-      (task) =>
-        task.status === 'IN PROGRESS'
-    ).length;
-
-    const review = tasks.filter(
-      (task) =>
-        task.status === 'REVIEW'
-    ).length;
-
-    const completed = tasks.filter(
-      (task) =>
-        task.status === 'COMPLETED'
-    ).length;
-
-    const urgent = tasks.filter(
-      (task) =>
-        task.priority === 'URGENT'
-    ).length;
-
-    return {
-      total,
-      todo,
-      inProgress,
-      review,
-      completed,
-      urgent,
-    };
-  }, [tasks]);
-
-  /* =======================================================
-     OVERDUE
-  ======================================================= */
-
-  const isOverdue = (task: Task) => {
-    if (
-      !task.dueDate ||
-      task.status === 'COMPLETED' ||
-      task.status === 'CANCELLED'
-    ) {
-      return false;
-    }
-
-    const due = new Date(
-      task.dueDate
+    return (
+      staff.find((person) => person.id === id)?.full_name ||
+      'Unknown staff'
     );
+  }
 
-    const today = new Date();
+  function getProjectName(id: number | null): string {
+    if (id === null) return 'No project';
 
-    due.setHours(23, 59, 59, 999);
+    return (
+      projects.find((project) => project.id === id)?.project_name ||
+      `Project #${id}`
+    );
+  }
 
-    return due < today;
-  };
+  function getClientName(id: string | null): string {
+    if (!id) return 'No client';
 
-  /* =======================================================
-     OPEN ADD FORM
-  ======================================================= */
+    return displayClient(clients.find((client) => client.id === id));
+  }
 
-  const openAddForm = () => {
+  function openCreateForm() {
     setEditingTask(null);
-
     setForm({
-      ...emptyForm,
-      startDate: todayISO(),
+      ...EMPTY_FORM,
+      department: currentStaff?.department || '',
     });
-
+    setError('');
+    setSuccess('');
     setShowForm(true);
-  };
+  }
 
-  /* =======================================================
-     OPEN EDIT FORM
-  ======================================================= */
-
-  const openEditForm = (
-    task: Task
-  ) => {
+  function openEditForm(task: Task) {
     setEditingTask(task);
 
     setForm({
-      taskName:
-        task.taskName || '',
-
-      project:
-        task.project || '',
-
-      assignedTo:
-        task.assignedTo || '',
-
-      priority:
-        task.priority || 'MEDIUM',
-
-      status:
-        task.status || 'TODO',
-
-      startDate:
-        dateForInput(
-          task.startDate
-        ),
-
-      dueDate:
-        dateForInput(
-          task.dueDate
-        ),
-
-      completionDate:
-        dateForInput(
-          task.completionDate
-        ),
-
-      description:
-        task.description || '',
-
-      notes:
-        task.notes || '',
+      title: task.title,
+      description: task.description || '',
+      assigned_to: task.assigned_to || '',
+      department: task.department || '',
+      project_id:
+        task.project_id !== null ? String(task.project_id) : '',
+      client_id: task.client_id || '',
+      due_date: task.due_date || '',
+      priority: task.priority,
+      status: task.status,
+      progress: task.progress || 0,
     });
 
+    setError('');
+    setSuccess('');
     setShowForm(true);
-  };
+  }
 
-  /* =======================================================
-     SAVE TASK
-  ======================================================= */
+  async function saveTask(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
 
-  const saveTask = async () => {
-    if (!form.taskName.trim()) {
-      alert(
-        'Please enter the task name.'
-      );
+    if (!currentStaff) {
+      setError('Staff profile not found. Please sign in again.');
       return;
     }
 
-    if (!form.project) {
-      alert(
-        'Please select a project.'
-      );
+    if (!form.title.trim()) {
+      setError('Task title is required.');
       return;
     }
 
-    if (!form.priority) {
-      alert(
-        'Please select a priority.'
-      );
+    if (!canManageTasks && !editingTask) {
+      setError('Only an admin can create tasks.');
       return;
     }
 
-    if (!form.status) {
-      alert(
-        'Please select a status.'
-      );
+    if (
+      !canManageTasks &&
+      editingTask?.assigned_to !== currentStaff.id
+    ) {
+      setError('You can update only tasks assigned to you.');
       return;
     }
+
+    if (
+      canManageTasks &&
+      form.assigned_to &&
+      !staff.some((person) => person.id === form.assigned_to)
+    ) {
+      setError('Please select a valid active staff member.');
+      return;
+    }
+
+    setSaving(true);
 
     try {
-      setSaving(true);
-
-      let completionDate =
-        form.completionDate;
-
-      /*
-       Automatically set completion date
-       when task becomes COMPLETED.
-      */
-
-      if (
-        form.status ===
-          'COMPLETED' &&
-        !completionDate
-      ) {
-        completionDate =
-          todayISO();
-      }
-
-      /*
-       Clear completion date when
-       task is moved away from COMPLETED.
-      */
-
-      if (
-        form.status !==
-          'COMPLETED'
-      ) {
-        completionDate = '';
-      }
+      const completed = form.status === 'COMPLETED';
 
       const payload = {
-        taskCode:
-          editingTask?.taskCode ||
-          generateTaskCode(),
+        title: form.title.trim(),
+        description: form.description.trim() || null,
 
-        taskName:
-          form.taskName.trim(),
+        assigned_to: canManageTasks
+          ? form.assigned_to || null
+          : currentStaff.id,
 
-        project:
-          form.project,
+        department: canManageTasks
+          ? form.department || null
+          : currentStaff.department || null,
 
-        assignedTo:
-          form.assignedTo.trim(),
+        // projects.id is expected to be BIGINT.
+        project_id: form.project_id
+          ? Number(form.project_id)
+          : null,
 
-        priority:
-          form.priority,
+        // clients.id is UUID: do not convert it to Number.
+        client_id: form.client_id || null,
 
-        status:
-          form.status,
-
-        startDate:
-          form.startDate
-            ? `${form.startDate} 00:00:00`
-            : '',
-
-        dueDate:
-          form.dueDate
-            ? `${form.dueDate} 00:00:00`
-            : '',
-
-        completionDate:
-          completionDate
-            ? `${completionDate} 00:00:00`
-            : '',
-
-        description:
-          form.description.trim(),
-
-        notes:
-          form.notes.trim(),
+        due_date: form.due_date || null,
+        priority: form.priority,
+        status: form.status,
+        progress: completed ? 100 : Number(form.progress),
       };
 
       if (editingTask) {
-        const updated =
-          await pb
-            .collection('tasks')
-            .update<Task>(
-              editingTask.id,
-              payload
-            );
+        let query = supabase
+          .from('tasks')
+          .update(payload)
+          .eq('id', editingTask.id);
 
-        setTasks((previous) =>
-          previous.map((task) =>
-            task.id === updated.id
-              ? updated
-              : task
-          )
-        );
+        if (!canManageTasks) {
+          query = query.eq('assigned_to', currentStaff.id);
+        }
 
-        setSelectedTask(updated);
+        const { error: updateError } = await query;
 
-        alert(
-          'Task updated successfully.'
-        );
+        if (updateError) throw updateError;
+
+        setSuccess('Task updated successfully.');
       } else {
-        const created =
-          await pb
-            .collection('tasks')
-            .create<Task>(
-              payload
-            );
+        const taskCode = `TSK-${Date.now()}`;
 
-        setTasks((previous) => [
-          created,
-          ...previous,
-        ]);
+        const { error: insertError } = await supabase
+          .from('tasks')
+          .insert({
+            ...payload,
+            task_code: taskCode,
+            created_by: currentStaff.id,
+          });
 
-        setSelectedTask(created);
+        if (insertError) throw insertError;
 
-        alert(
-          `Task ${created.taskCode} created successfully.`
-        );
+        setSuccess('Task created successfully.');
       }
 
       setShowForm(false);
-    } catch (error: any) {
-      console.error(
-        'Task save failed:',
-        error
-      );
+      setEditingTask(null);
 
-      console.error(
-        'Original error:',
-        error?.originalError
-      );
-
-      console.error(
-        'Error data:',
-        error?.data
-      );
-
-      console.error(
-        'Response:',
-        error?.response
-      );
-
-      const validationErrors =
-        error?.data?.data
-          ? Object.entries(
-              error.data.data
-            )
-              .map(
-                ([
-                  field,
-                  details,
-                ]: [
-                  string,
-                  any
-                ]) =>
-                  `${field}: ${
-                    details?.message ||
-                    'Invalid value'
-                  }`
-              )
-              .join('\n')
-          : error?.message;
-
-      alert(
-        `Failed to save task.\n\n${
-          validationErrors ||
-          'Unknown error'
-        }`
-      );
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  /* =======================================================
-     DELETE TASK
-  ======================================================= */
+  async function updateTaskStatus(
+    task: Task,
+    nextStatus: TaskStatus,
+  ) {
+    if (!currentStaff) return;
 
-  const deleteTask = async (
-    task: Task
-  ) => {
-    const confirmed =
-      window.confirm(
-        `Delete ${task.taskCode}?\n\nThis action cannot be undone.`
-      );
-
-    if (!confirmed) {
+    if (
+      !canManageTasks &&
+      task.assigned_to !== currentStaff.id
+    ) {
+      setError('You can update only tasks assigned to you.');
       return;
     }
 
+    setError('');
+    setSuccess('');
+    setUpdatingTaskId(task.id);
+
     try {
-      await pb
-        .collection('tasks')
-        .delete(task.id);
+      const nextProgress =
+        nextStatus === 'COMPLETED'
+          ? 100
+          : task.status === 'COMPLETED'
+            ? 0
+            : task.progress;
 
-      setTasks((previous) =>
-        previous.filter(
-          (item) =>
-            item.id !== task.id
-        )
-      );
+      let query = supabase
+        .from('tasks')
+        .update({
+          status: nextStatus,
+          progress: nextProgress,
+        })
+        .eq('id', task.id);
 
-      setSelectedTask(null);
-      setShowDetails(false);
-
-      alert(
-        'Task deleted successfully.'
-      );
-    } catch (error: any) {
-      console.error(
-        'Task deletion failed:',
-        error
-      );
-
-      alert(
-        `Failed to delete task.\n\n${
-          error?.message ||
-          'Unknown error'
-        }`
-      );
-    }
-  };
-
-  /* =======================================================
-     QUICK STATUS UPDATE
-  ======================================================= */
-
-  const updateTaskStatus =
-    async (
-      task: Task,
-      status: string
-    ) => {
-      try {
-        const updateData: any = {
-          status,
-        };
-
-        if (
-          status ===
-          'COMPLETED'
-        ) {
-          updateData.completionDate =
-            `${todayISO()} 00:00:00`;
-        } else {
-          updateData.completionDate =
-            '';
-        }
-
-        const updated =
-          await pb
-            .collection('tasks')
-            .update<Task>(
-              task.id,
-              updateData
-            );
-
-        setTasks((previous) =>
-          previous.map((item) =>
-            item.id === updated.id
-              ? updated
-              : item
-          )
-        );
-
-        setSelectedTask(updated);
-      } catch (error: any) {
-        console.error(
-          'Task status update failed:',
-          error
-        );
-
-        alert(
-          `Failed to update task status.\n\n${
-            error?.message ||
-            'Unknown error'
-          }`
-        );
+      if (!canManageTasks) {
+        query = query.eq('assigned_to', currentStaff.id);
       }
-    };
 
-  /* =======================================================
-     OPEN TASK
-  ======================================================= */
+      const { error: updateError } = await query;
 
-  const openTask = (
-    task: Task
-  ) => {
-    setSelectedTask(task);
-    setShowDetails(true);
-  };
+      if (updateError) throw updateError;
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+      setSuccess('Task status updated successfully.');
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  }
+
+  async function deleteTask(task: Task) {
+    if (!isAdmin) {
+      setError('Only an admin can delete tasks.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${task.title}"? This action cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', task.id);
+
+      if (deleteError) throw deleteError;
+
+      setSuccess('Task deleted successfully.');
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-
-      <div className="max-w-7xl mx-auto">
-
-        {/* =================================================
-            HEADER
-        ================================================= */}
-
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header */}
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-
-            <button
-              onClick={() =>
-                navigate('/portal')
-              }
-              className="text-sm text-gray-500 hover:text-[#9a641f] mb-2"
-            >
-              ← Back to Dashboard
-            </button>
-
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
-              Tasks
-            </h1>
-
-            <p className="text-gray-500 mt-1">
-              Manage project tasks, assignments and deadlines.
-            </p>
-
-          </div>
-
-          <div className="flex gap-3">
-
-            <button
-              onClick={loadData}
-              disabled={loading}
-              className="px-5 py-3 rounded-lg bg-gray-900 text-white hover:bg-black disabled:opacity-50"
-            >
-              {loading
-                ? 'Refreshing...'
-                : 'Refresh'}
-            </button>
-
-            <button
-              onClick={
-                openAddForm
-              }
-              className="px-5 py-3 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017]"
-            >
-              + New Task
-            </button>
-
-          </div>
-
-        </div>
-
-        {/* =================================================
-            STATS
-        ================================================= */}
-
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-7">
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              Total
-            </p>
-
-            <p className="text-2xl font-bold mt-2">
-              {stats.total}
-            </p>
-
-          </div>
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              To Do
-            </p>
-
-            <p className="text-2xl font-bold mt-2 text-gray-700">
-              {stats.todo}
-            </p>
-
-          </div>
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              In Progress
-            </p>
-
-            <p className="text-2xl font-bold mt-2 text-blue-600">
-              {stats.inProgress}
-            </p>
-
-          </div>
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              Review
-            </p>
-
-            <p className="text-2xl font-bold mt-2 text-purple-600">
-              {stats.review}
-            </p>
-
-          </div>
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              Completed
-            </p>
-
-            <p className="text-2xl font-bold mt-2 text-green-600">
-              {stats.completed}
-            </p>
-
-          </div>
-
-          <div className="bg-white rounded-xl border p-5">
-
-            <p className="text-sm text-gray-500">
-              Urgent
-            </p>
-
-            <p className="text-2xl font-bold mt-2 text-red-600">
-              {stats.urgent}
-            </p>
-
-          </div>
-
-        </div>
-
-        {/* =================================================
-            FILTERS
-        ================================================= */}
-
-        <div className="bg-white border rounded-xl p-4 mb-6">
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-
-            <input
-              value={search}
-              onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
-              }
-              placeholder="Search task, project, staff..."
-              className="border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#c5832b]"
-            />
-
-            <select
-              value={
-                statusFilter
-              }
-              onChange={(event) =>
-                setStatusFilter(
-                  event.target.value
-                )
-              }
-              className="border rounded-lg px-4 py-3"
-            >
-
-              <option value="ALL">
-                All Status
-              </option>
-
-              {STATUSES.map(
-                (status) => (
-                  <option
-                    key={status}
-                    value={status}
-                  >
-                    {status}
-                  </option>
-                )
-              )}
-
-            </select>
-
-            <select
-              value={
-                priorityFilter
-              }
-              onChange={(event) =>
-                setPriorityFilter(
-                  event.target.value
-                )
-              }
-              className="border rounded-lg px-4 py-3"
-            >
-
-              <option value="ALL">
-                All Priority
-              </option>
-
-              {PRIORITIES.map(
-                (priority) => (
-                  <option
-                    key={priority}
-                    value={priority}
-                  >
-                    {priority}
-                  </option>
-                )
-              )}
-
-            </select>
-
-            <select
-              value={
-                projectFilter
-              }
-              onChange={(event) =>
-                setProjectFilter(
-                  event.target.value
-                )
-              }
-              className="border rounded-lg px-4 py-3"
-            >
-
-              <option value="ALL">
-                All Projects
-              </option>
-
-              {projects.map(
-                (project) => (
-                  <option
-                    key={project.id}
-                    value={project.id}
-                  >
-                    {project.projectCode} —{' '}
-                    {project.projectName}
-                  </option>
-                )
-              )}
-
-            </select>
-
-          </div>
-
-        </div>
-
-        {/* =================================================
-            TASK TABLE
-        ================================================= */}
-
-        <div className="bg-white border rounded-xl overflow-hidden">
-
-          {loading ? (
-
-            <div className="p-10 text-center text-gray-500">
-              Loading tasks...
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-7 w-7 text-blue-700" />
+              <h1 className="text-2xl font-bold text-slate-900">
+                Tasks
+              </h1>
             </div>
 
-          ) : filteredTasks.length ===
-            0 ? (
+            <p className="mt-1 text-sm text-slate-500">
+              Assign, track and manage SRL Infra work.
+            </p>
 
-            <div className="p-12 text-center">
+            {currentStaff && (
+              <p className="mt-2 text-xs text-slate-500">
+                Signed in as {currentStaff.full_name}
+                {' · '}
+                {currentStaff.department || 'No department'}
+              </p>
+            )}
+          </div>
 
-              <div className="text-5xl mb-4">
-                📋
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+
+            {canManageTasks && (
+              <button
+                type="button"
+                onClick={openCreateForm}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                <Plus className="h-4 w-4" />
+                Create Task
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Alerts */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="break-words">{error}</span>
+
+            <button
+              type="button"
+              className="ml-auto"
+              onClick={() => setError('')}
+              aria-label="Dismiss error"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {success && (
+          <div
+            role="status"
+            className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+          >
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>{success}</span>
+
+            <button
+              type="button"
+              className="ml-auto"
+              onClick={() => setSuccess('')}
+              aria-label="Dismiss success"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Metrics */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          {[
+            {
+              label: 'Total Tasks',
+              value: stats.total,
+              icon: ClipboardList,
+            },
+            {
+              label: 'To Do',
+              value: stats.todo,
+              icon: Clock3,
+            },
+            {
+              label: 'In Progress',
+              value: stats.inProgress,
+              icon: RefreshCw,
+            },
+            {
+              label: 'Completed',
+              value: stats.completed,
+              icon: CheckCircle2,
+            },
+            {
+              label: 'Overdue',
+              value: stats.overdue,
+              icon: AlertCircle,
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <div key={item.label} className={cardClass}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-slate-500 sm:text-sm">
+                    {item.label}
+                  </p>
+                  <Icon className="h-4 w-4 text-slate-400" />
+                </div>
+
+                <p className="mt-3 text-2xl font-bold text-slate-900">
+                  {item.value}
+                </p>
               </div>
+            );
+          })}
+        </div>
 
-              <h3 className="font-semibold text-lg">
+        {/* Filters and task list */}
+        <section className={`${cardClass} space-y-4`}>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                className={`${inputClass} pl-9`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search title, code or description..."
+                aria-label="Search tasks"
+              />
+            </div>
+
+            <select
+              className={inputClass}
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              aria-label="Filter by status"
+            >
+              <option value="ALL">All statuses</option>
+              {STATUSES.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className={inputClass}
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+              aria-label="Filter by priority"
+            >
+              <option value="ALL">All priorities</option>
+              {PRIORITIES.map((priority) => (
+                <option key={priority} value={priority}>
+                  {priority}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Loading tasks...
+            </div>
+          ) : visibleTasks.length === 0 ? (
+            <div className="py-16 text-center">
+              <ClipboardList className="mx-auto h-10 w-10 text-slate-300" />
+
+              <h3 className="mt-3 font-semibold text-slate-800">
                 No tasks found
               </h3>
 
-              <p className="text-gray-500 mt-1">
-                Create your first task to start managing project work.
+              <p className="mt-1 text-sm text-slate-500">
+                {canManageTasks
+                  ? 'Create a task to get started.'
+                  : 'Tasks assigned to you will appear here.'}
               </p>
 
-              <button
-                onClick={
-                  openAddForm
-                }
-                className="mt-5 px-5 py-3 rounded-lg bg-[#9a641f] text-white"
-              >
-                + Create Task
-              </button>
-
+              {canManageTasks && (
+                <button
+                  type="button"
+                  onClick={openCreateForm}
+                  className="mt-4 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Create your first task
+                </button>
+              )}
             </div>
-
           ) : (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {visibleTasks.map((task) => (
+                <article
+                  key={task.id}
+                  className="rounded-xl border border-slate-200 p-4 transition hover:border-slate-300 hover:shadow-sm"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-slate-400">
+                        {task.task_code || `TASK-${task.id}`}
+                      </p>
 
-            <div className="overflow-x-auto">
+                      <h3 className="mt-1 break-words font-semibold text-slate-900">
+                        {task.title}
+                      </h3>
+                    </div>
 
-              <table className="w-full">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${priorityClass(task.priority)}`}
+                    >
+                      {task.priority}
+                    </span>
+                  </div>
 
-                <thead className="bg-gray-900 text-white">
-
-                  <tr>
-
-                    <th className="text-left px-5 py-4">
-                      Task
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Project
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Assigned To
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Priority
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Status
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Due Date
-                    </th>
-
-                  </tr>
-
-                </thead>
-
-                <tbody>
-
-                  {filteredTasks.map(
-                    (task) => {
-
-                      const project =
-                        getProject(
-                          task.project
-                        );
-
-                      const overdue =
-                        isOverdue(task);
-
-                      return (
-                        <tr
-                          key={
-                            task.id
-                          }
-                          onClick={() =>
-                            openTask(
-                              task
-                            )
-                          }
-                          className="border-b hover:bg-gray-50 cursor-pointer"
-                        >
-
-                          <td className="px-5 py-4">
-
-                            <p className="font-semibold text-[#9a641f]">
-                              {
-                                task.taskCode
-                              }
-                            </p>
-
-                            <p className="font-medium text-gray-900">
-                              {
-                                task.taskName
-                              }
-                            </p>
-
-                          </td>
-
-                          <td className="px-5 py-4">
-
-                            <p className="font-medium">
-                              {
-                                project?.projectCode ||
-                                '—'
-                              }
-                            </p>
-
-                            <p className="text-xs text-gray-500">
-                              {
-                                project?.projectName ||
-                                'Project unavailable'
-                              }
-                            </p>
-
-                          </td>
-
-                          <td className="px-5 py-4 text-sm">
-
-                            {
-                              task.assignedTo ||
-                              'Unassigned'
-                            }
-
-                          </td>
-
-                          <td className="px-5 py-4">
-
-                            <span
-                              className={`
-                                inline-flex
-                                px-3 py-1
-                                rounded-full
-                                text-xs
-                                font-semibold
-
-                                ${
-                                  task.priority ===
-                                  'URGENT'
-                                    ? 'bg-red-100 text-red-700'
-                                    : task.priority ===
-                                      'HIGH'
-                                    ? 'bg-orange-100 text-orange-700'
-                                    : task.priority ===
-                                      'MEDIUM'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                }
-                              `}
-                            >
-                              {
-                                task.priority
-                              }
-                            </span>
-
-                          </td>
-
-                          <td className="px-5 py-4">
-
-                            <span
-                              className={`
-                                inline-flex
-                                px-3 py-1
-                                rounded-full
-                                text-xs
-                                font-semibold
-
-                                ${
-                                  task.status ===
-                                  'COMPLETED'
-                                    ? 'bg-green-100 text-green-700'
-                                    : task.status ===
-                                      'CANCELLED'
-                                    ? 'bg-red-100 text-red-700'
-                                    : task.status ===
-                                      'IN PROGRESS'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : task.status ===
-                                      'REVIEW'
-                                    ? 'bg-purple-100 text-purple-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                }
-                              `}
-                            >
-                              {
-                                task.status
-                              }
-                            </span>
-
-                          </td>
-
-                          <td className="px-5 py-4">
-
-                            <p
-                              className={
-                                overdue
-                                  ? 'text-red-600 font-semibold'
-                                  : 'text-gray-700'
-                              }
-                            >
-                              {formatDate(
-                                task.dueDate
-                              )}
-                            </p>
-
-                            {overdue && (
-                              <p className="text-xs text-red-500">
-                                Overdue
-                              </p>
-                            )}
-
-                          </td>
-
-                        </tr>
-                      );
-                    }
+                  {task.description && (
+                    <p className="mt-3 whitespace-pre-wrap break-words text-sm text-slate-600">
+                      {task.description}
+                    </p>
                   )}
 
-                </tbody>
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="flex items-start gap-2 text-slate-600">
+                      <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
 
-              </table>
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400">
+                          Assigned to
+                        </p>
 
+                        <p className="break-words font-medium text-slate-800">
+                          {getStaffName(task.assigned_to)}
+                        </p>
+
+                        {task.department && (
+                          <p className="text-xs text-slate-500">
+                            {task.department}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 text-slate-600">
+                      <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
+                      <div>
+                        <p className="text-xs text-slate-400">Due date</p>
+
+                        <p
+                          className={`font-medium ${
+                            isOverdue(task)
+                              ? 'text-red-600'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          {formatDate(task.due_date)}
+                          {isOverdue(task) && ' · Overdue'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-400">Project</p>
+                      <p className="mt-1 break-words font-medium text-slate-800">
+                        {getProjectName(task.project_id)}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-400">Client</p>
+                      <p className="mt-1 break-words font-medium text-slate-800">
+                        {getClientName(task.client_id)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Progress */}
+                  <div className="mt-4">
+                    <div className="mb-1.5 flex justify-between text-xs">
+                      <span className="font-medium text-slate-500">
+                        Progress
+                      </span>
+                      <span className="font-semibold text-slate-700">
+                        {task.progress}%
+                      </span>
+                    </div>
+
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, task.progress))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-slate-400">Status</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {statusLabel(task.status)}
+                      </p>
+                    </div>
+
+                    {!canManageTasks &&
+                      task.assigned_to === currentStaff?.id && (
+                        <select
+                          className={`${inputClass} sm:max-w-44`}
+                          value={task.status}
+                          disabled={updatingTaskId === task.id}
+                          onChange={(event) =>
+                            void updateTaskStatus(
+                              task,
+                              event.target.value as TaskStatus,
+                            )
+                          }
+                          aria-label={`Update status for ${task.title}`}
+                        >
+                          {STATUSES.map((status) => (
+                            <option
+                              key={status.value}
+                              value={status.value}
+                            >
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                    {canManageTasks && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditForm(task)}
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
+
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => void deleteTask(task)}
+                            className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                            aria-label={`Delete ${task.title}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {!canManageTasks &&
+                      task.assigned_to === currentStaff?.id && (
+                        <button
+                          type="button"
+                          onClick={() => openEditForm(task)}
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Update Task
+                        </button>
+                      )}
+                  </div>
+                </article>
+              ))}
             </div>
-
           )}
 
-        </div>
-
+          {!loading && (
+            <p className="text-xs text-slate-400">
+              Showing {visibleTasks.length} of {tasks.length} tasks
+            </p>
+          )}
+        </section>
       </div>
 
-      {/* ===================================================
-          CREATE / EDIT MODAL
-      =================================================== */}
-
+      {/* Create/Edit modal */}
       {showForm && (
-
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
-
-            <div className="p-6 border-b flex items-center justify-between">
-
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+          <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5">
               <div>
-
-                <h2 className="text-2xl font-bold">
-                  {editingTask
-                    ? 'Edit Task'
-                    : 'Create Task'}
+                <h2 className="text-lg font-bold text-slate-900">
+                  {editingTask ? 'Update Task' : 'Create Task'}
                 </h2>
 
-                <p className="text-sm text-gray-500 mt-1">
-                  {editingTask
-                    ? editingTask.taskCode
-                    : 'New task'}
+                <p className="mt-1 text-sm text-slate-500">
+                  Enter the task details below.
                 </p>
-
               </div>
 
               <button
-                onClick={() =>
-                  setShowForm(false)
-                }
-                className="text-2xl text-gray-500 hover:text-black"
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="Close task form"
               >
-                ×
+                <X className="h-5 w-5" />
               </button>
-
             </div>
 
-            <div className="p-6 space-y-6">
-
-              {/* TASK INFORMATION */}
-
+            <form onSubmit={saveTask} className="space-y-4 p-5">
               <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Task title *
+                </label>
 
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  Task Information
-                </h3>
-
-                <div className="grid md:grid-cols-2 gap-4">
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Task Name *
-                    </label>
-
-                    <input
-                      value={
-                        form.taskName
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          taskName:
-                            event.target
-                              .value,
-                        })
-                      }
-                      placeholder="Enter task name"
-                      className="w-full border rounded-lg px-3 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Project *
-                    </label>
-
-                    <select
-                      value={
-                        form.project
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          project:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    >
-
-                      <option value="">
-                        Select Project
-                      </option>
-
-                      {projects.map(
-                        (project) => (
-                          <option
-                            key={
-                              project.id
-                            }
-                            value={
-                              project.id
-                            }
-                          >
-                            {
-                              project.projectCode
-                            }{' '}
-                            —{' '}
-                            {
-                              project.projectName
-                            }
-                          </option>
-                        )
-                      )}
-
-                    </select>
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Assigned To
-                    </label>
-
-                    <input
-                      value={
-                        form.assignedTo
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          assignedTo:
-                            event.target
-                              .value,
-                        })
-                      }
-                      placeholder="Staff member"
-                      className="w-full border rounded-lg px-3 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Priority *
-                    </label>
-
-                    <select
-                      value={
-                        form.priority
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          priority:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    >
-
-                      {PRIORITIES.map(
-                        (priority) => (
-                          <option
-                            key={
-                              priority
-                            }
-                            value={
-                              priority
-                            }
-                          >
-                            {
-                              priority
-                            }
-                          </option>
-                        )
-                      )}
-
-                    </select>
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Status *
-                    </label>
-
-                    <select
-                      value={
-                        form.status
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          status:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    >
-
-                      {STATUSES.map(
-                        (status) => (
-                          <option
-                            key={status}
-                            value={status}
-                          >
-                            {status}
-                          </option>
-                        )
-                      )}
-
-                    </select>
-
-                  </div>
-
-                </div>
-
+                <input
+                  className={inputClass}
+                  required
+                  maxLength={200}
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm({ ...form, title: event.target.value })
+                  }
+                  placeholder="e.g. Prepare interior design quotation"
+                />
               </div>
 
-              {/* DATES */}
-
               <div>
-
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  Timeline
-                </h3>
-
-                <div className="grid md:grid-cols-3 gap-4">
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Start Date
-                    </label>
-
-                    <input
-                      type="date"
-                      value={
-                        form.startDate
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          startDate:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Due Date
-                    </label>
-
-                    <input
-                      type="date"
-                      value={
-                        form.dueDate
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          dueDate:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Completion Date
-                    </label>
-
-                    <input
-                      type="date"
-                      value={
-                        form.completionDate
-                      }
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          completionDate:
-                            event.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-3"
-                    />
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* DESCRIPTION */}
-
-              <div>
-
-                <label className="block text-sm font-medium mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Description
                 </label>
 
                 <textarea
-                  value={
-                    form.description
-                  }
+                  className={inputClass}
+                  rows={3}
+                  maxLength={5000}
+                  value={form.description}
                   onChange={(event) =>
                     setForm({
                       ...form,
-                      description:
-                        event.target
-                          .value,
+                      description: event.target.value,
                     })
                   }
-                  rows={4}
-                  placeholder="Describe what needs to be completed..."
-                  className="w-full border rounded-lg px-3 py-3"
+                  placeholder="Describe the work to be completed..."
                 />
-
               </div>
 
-              {/* NOTES */}
-
-              <div>
-
-                <label className="block text-sm font-medium mb-1">
-                  Notes
-                </label>
-
-                <textarea
-                  value={
-                    form.notes
-                  }
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      notes:
-                        event.target
-                          .value,
-                    })
-                  }
-                  rows={4}
-                  placeholder="Internal task notes..."
-                  className="w-full border rounded-lg px-3 py-3"
-                />
-
-              </div>
-
-            </div>
-
-            {/* ACTIONS */}
-
-            <div className="p-6 border-t flex justify-end gap-3">
-
-              <button
-                onClick={() =>
-                  setShowForm(false)
-                }
-                className="px-5 py-3 rounded-lg border hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={
-                  saveTask
-                }
-                disabled={saving}
-                className="px-5 py-3 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017] disabled:opacity-50"
-              >
-                {saving
-                  ? 'Saving...'
-                  : editingTask
-                  ? 'Update Task'
-                  : 'Create Task'}
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-      {/* ===================================================
-          DETAILS MODAL
-      =================================================== */}
-
-      {showDetails &&
-        selectedTask && (
-
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-
-            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
-
-              <div className="p-6 border-b flex items-start justify-between">
-
-                <div>
-
-                  <p className="text-sm text-gray-500">
-                    {
-                      selectedTask.taskCode
-                    }
-                  </p>
-
-                  <h2 className="text-2xl font-bold">
-                    {
-                      selectedTask.taskName
-                    }
-                  </h2>
-
-                  <p className="text-sm text-gray-500 mt-1">
-
-                    {
-                      getProject(
-                        selectedTask.project
-                      )?.projectCode ||
-                      'Project'
-                    }
-
-                    {' — '}
-
-                    {
-                      getProject(
-                        selectedTask.project
-                      )?.projectName ||
-                      'Unknown project'
-                    }
-
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={() =>
-                    setShowDetails(
-                      false
-                    )
-                  }
-                  className="text-2xl text-gray-500 hover:text-black"
-                >
-                  ×
-                </button>
-
-              </div>
-
-              <div className="p-6 space-y-6">
-
-                {/* SUMMARY */}
-
-                <div className="grid md:grid-cols-4 gap-4">
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-sm text-gray-500">
-                      Priority
-                    </p>
-
-                    <p className="font-semibold mt-1">
-                      {
-                        selectedTask.priority
-                      }
-                    </p>
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-sm text-gray-500">
-                      Assigned To
-                    </p>
-
-                    <p className="font-semibold mt-1">
-                      {
-                        selectedTask.assignedTo ||
-                        'Unassigned'
-                      }
-                    </p>
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-sm text-gray-500">
-                      Due Date
-                    </p>
-
-                    <p
-                      className={`font-semibold mt-1 ${
-                        isOverdue(
-                          selectedTask
-                        )
-                          ? 'text-red-600'
-                          : ''
-                      }`}
-                    >
-                      {formatDate(
-                        selectedTask.dueDate
-                      )}
-                    </p>
-
-                    {isOverdue(
-                      selectedTask
-                    ) && (
-                      <p className="text-xs text-red-500 mt-1">
-                        Overdue
-                      </p>
-                    )}
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-sm text-gray-500">
-                      Status
-                    </p>
+              {canManageTasks && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Assign staff
+                    </label>
 
                     <select
-                      value={
-                        selectedTask.status
-                      }
-                      onChange={(event) =>
-                        updateTaskStatus(
-                          selectedTask,
-                          event.target
-                            .value
-                        )
-                      }
-                      className="mt-2 w-full border rounded-lg px-2 py-2"
+                      className={inputClass}
+                      value={form.assigned_to}
+                      onChange={(event) => {
+                        const selected = staff.find(
+                          (person) => person.id === event.target.value,
+                        );
+
+                        setForm({
+                          ...form,
+                          assigned_to: event.target.value,
+                          department:
+                            selected?.department || form.department,
+                        });
+                      }}
                     >
+                      <option value="">Unassigned</option>
 
-                      {STATUSES.map(
-                        (status) => (
-                          <option
-                            key={status}
-                            value={status}
-                          >
-                            {status}
-                          </option>
-                        )
-                      )}
-
+                      {staff.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.full_name}
+                          {' — '}
+                          {person.department || 'No department'}
+                        </option>
+                      ))}
                     </select>
-
                   </div>
 
-                </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Department
+                    </label>
 
-                {/* TIMELINE */}
+                    <select
+                      className={inputClass}
+                      value={form.department}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          department: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Select department</option>
 
-                <div className="border rounded-xl p-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-4">
-                    Timeline
-                  </h3>
-
-                  <div className="grid md:grid-cols-3 gap-4 text-sm">
-
-                    <div>
-
-                      <p className="text-gray-500">
-                        Start Date
-                      </p>
-
-                      <p className="font-medium mt-1">
-                        {formatDate(
-                          selectedTask.startDate
-                        )}
-                      </p>
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-gray-500">
-                        Due Date
-                      </p>
-
-                      <p className="font-medium mt-1">
-                        {formatDate(
-                          selectedTask.dueDate
-                        )}
-                      </p>
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-gray-500">
-                        Completion Date
-                      </p>
-
-                      <p className="font-medium mt-1">
-                        {formatDate(
-                          selectedTask.completionDate
-                        )}
-                      </p>
-
-                    </div>
-
+                      {DEPARTMENTS.map((department) => (
+                        <option key={department} value={department}>
+                          {department}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
                 </div>
+              )}
 
-                {/* DESCRIPTION */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Project
+                  </label>
 
-                <div className="border rounded-xl p-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-3">
-                    Description
-                  </h3>
-
-                  <p className="whitespace-pre-line text-gray-700">
-                    {
-                      selectedTask.description ||
-                      'No description available.'
+                  <select
+                    className={inputClass}
+                    value={form.project_id}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        project_id: event.target.value,
+                      })
                     }
-                  </p>
-
-                </div>
-
-                {/* NOTES */}
-
-                <div className="border rounded-xl p-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-3">
-                    Notes
-                  </h3>
-
-                  <p className="whitespace-pre-line text-gray-700">
-                    {
-                      selectedTask.notes ||
-                      'No notes available.'
-                    }
-                  </p>
-
-                </div>
-
-                {/* ACTIONS */}
-
-                <div className="flex flex-wrap gap-3">
-
-                  <button
-                    onClick={() =>
-                      openEditForm(
-                        selectedTask
-                      )
-                    }
-                    className="px-5 py-3 rounded-lg bg-gray-900 text-white hover:bg-black"
                   >
-                    Edit Task
-                  </button>
+                    <option value="">No project linked</option>
 
-                  <button
-                    onClick={() =>
-                      deleteTask(
-                        selectedTask
-                      )
-                    }
-                    className="px-5 py-3 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                  >
-                    Delete Task
-                  </button>
-
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.project_code
+                          ? `${project.project_code} — `
+                          : ''}
+                        {project.project_name ||
+                          `Project #${project.id}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Client
+                  </label>
+
+                  <select
+                    className={inputClass}
+                    value={form.client_id}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        client_id: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="">No client linked</option>
+
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {displayClient(client)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Due date
+                  </label>
 
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={form.due_date}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        due_date: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Priority
+                  </label>
+
+                  <select
+                    className={inputClass}
+                    value={form.priority}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        priority: event.target.value as TaskPriority,
+                      })
+                    }
+                  >
+                    {PRIORITIES.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Status
+                  </label>
+
+                  <select
+                    className={inputClass}
+                    value={form.status}
+                    onChange={(event) => {
+                      const status = event.target.value as TaskStatus;
+
+                      setForm({
+                        ...form,
+                        status,
+                        progress:
+                          status === 'COMPLETED'
+                            ? 100
+                            : form.progress,
+                      });
+                    }}
+                  >
+                    {STATUSES.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Progress: {form.status === 'COMPLETED' ? 100 : form.progress}%
+                  </label>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    disabled={form.status === 'COMPLETED'}
+                    className="mt-3 w-full accent-blue-700"
+                    value={
+                      form.status === 'COMPLETED' ? 100 : form.progress
+                    }
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        progress: Number(event.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  disabled={saving}
+                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                >
+                  {saving && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+
+                  {saving
+                    ? 'Saving...'
+                    : editingTask
+                      ? 'Save Changes'
+                      : 'Create Task'}
+                </button>
+              </div>
+            </form>
           </div>
-
-        )}
-
+        </div>
+      )}
     </div>
   );
 }

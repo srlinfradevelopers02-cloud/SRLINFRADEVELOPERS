@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 import {
   BrowserRouter,
   Routes,
@@ -11,8 +11,6 @@ import App from './App.tsx';
 import Login from './pages/portal/login.tsx';
 import Dashboard from './pages/portal/Dashboard.tsx';
 
-import { pb } from './lib/pocketbase';
-
 import { supabase } from './lib/supabase';
 
 import './index.css';
@@ -22,14 +20,73 @@ function ProtectedRoute({
 }: {
   children: ReactNode;
 }) {
-  if (!pb.authStore.isValid) {
-    return <Navigate to="/portal/login" replace />;
+  const [session, setSession] =
+    React.useState<any>(undefined);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (mounted) {
+        setSession(session);
+      }
+    };
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (mounted) {
+          setSession(session);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  /*
+   * Supabase session is still being checked.
+   */
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen bg-[#111111] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-[#C5832B] text-sm font-semibold tracking-wider uppercase">
+            Loading CRM...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * No Supabase session = not authenticated.
+   */
+  if (!session) {
+    return (
+      <Navigate
+        to="/portal/login"
+        replace
+      />
+    );
   }
 
   return children;
 }
 
-createRoot(document.getElementById('root')!).render(
+createRoot(
+  document.getElementById('root')!
+).render(
   <BrowserRouter>
 
     <Routes>
@@ -59,7 +116,12 @@ createRoot(document.getElementById('root')!).render(
       {/* Unknown routes */}
       <Route
         path="*"
-        element={<Navigate to="/" replace />}
+        element={
+          <Navigate
+            to="/"
+            replace
+          />
+        }
       />
 
     </Routes>

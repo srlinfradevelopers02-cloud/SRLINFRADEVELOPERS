@@ -1,72 +1,122 @@
 import React, { useState } from 'react';
-import { pb } from '../../lib/pocketbase';
+import { supabase } from '../../lib/supabase';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (
-    e: React.FormEvent
-  ) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (loading) return;
 
     setError('');
     setLoading(true);
 
     try {
-      const authData =
-        await pb
-          .collection('users')
-          .authWithPassword(
-            email.trim(),
-            password
-          );
+      const {
+        data: authData,
+        error: authError,
+      } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-      /*
-       * Confirm PocketBase actually created
-       * a valid authenticated session.
-       */
-      if (
-        !pb.authStore.isValid ||
-        !authData.record?.id
-      ) {
+      if (authError) {
+        throw new Error(authError.message);
+      }
+
+      if (!authData.user) {
         throw new Error(
-          'PocketBase authentication was not established.'
+          'Supabase authentication was not established.'
         );
       }
 
       console.log(
-        'PocketBase authentication successful'
+        'Authenticated user:',
+        authData.user.id
+      );
+
+      const {
+        data: staff,
+        error: staffError,
+      } = await supabase
+        .from('staff')
+        .select(
+          'id, user_id, staff_code, full_name, email, role, department, designation, is_active'
+        )
+        .eq('user_id', authData.user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (staffError) {
+        console.error(
+          'Staff lookup failed:',
+          staffError
+        );
+
+        throw new Error(
+          `Staff verification failed: ${staffError.message}`
+        );
+      }
+
+      if (!staff) {
+        throw new Error(
+          'Your Supabase account is authenticated, but no active staff record is linked to this user.'
+        );
+      }
+
+      console.log(
+        'CRM staff:',
+        staff
+      );
+
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw new Error(
+          `Session verification failed: ${sessionError.message}`
+        );
+      }
+
+      if (!sessionData.session) {
+        throw new Error(
+          'Supabase login succeeded, but no active session was created.'
+        );
+      }
+
+      console.log(
+        'Login session:',
+        sessionData.session
       );
 
       console.log(
-        'Authenticated user:',
-        authData.record.id
+        'Login user:',
+        sessionData.session.user.id
       );
 
-      /*
-       * Navigate to CRM.
-       */
-      window.location.assign('/portal');
+      console.log(
+        'Local auth storage:',
+        localStorage.getItem(
+          'srl-infra-crm-auth'
+        )
+      );
 
+      window.location.assign('/portal');
     } catch (err: any) {
       console.error(
         'Login failed:',
         err
       );
 
-      /*
-       * Clear any incomplete authentication state.
-       */
-      pb.authStore.clear();
-
       setError(
-        err?.response?.message ||
-          err?.message ||
-          'Invalid email or password. Please check your credentials.'
+        err?.message ||
+          'Login failed. Please check your credentials.'
       );
     } finally {
       setLoading(false);
@@ -75,12 +125,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-[#111111] flex items-center justify-center px-4">
-
       <div className="w-full max-w-md">
 
-        {/* Brand */}
         <div className="text-center mb-8">
-
           <div className="flex justify-center mb-5">
             <img
               src="/logo.png"
@@ -96,10 +143,8 @@ export default function Login() {
           <p className="text-[#C5832B] text-xs tracking-[0.3em] uppercase mt-2">
             Operational CRM
           </p>
-
         </div>
 
-        {/* Login Card */}
         <div className="bg-[#1A1A1A] border border-neutral-800 rounded-2xl p-8 shadow-2xl">
 
           <div className="mb-7">
@@ -117,7 +162,6 @@ export default function Login() {
             className="space-y-5"
           >
 
-            {/* Email */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                 Email Address
@@ -150,7 +194,6 @@ export default function Login() {
               />
             </div>
 
-            {/* Password */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                 Password
@@ -183,7 +226,6 @@ export default function Login() {
               />
             </div>
 
-            {/* Error */}
             {error && (
               <div className="rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3">
                 <p className="text-sm text-red-400">
@@ -192,7 +234,6 @@ export default function Login() {
               </div>
             )}
 
-            {/* Login */}
             <button
               type="submit"
               disabled={loading}
@@ -228,7 +269,6 @@ export default function Login() {
 
         </div>
 
-        {/* Back to Website */}
         <div className="text-center mt-6">
           <a
             href="/"
@@ -239,7 +279,6 @@ export default function Login() {
         </div>
 
       </div>
-
     </div>
   );
 }

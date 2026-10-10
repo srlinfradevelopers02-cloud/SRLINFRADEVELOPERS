@@ -209,7 +209,7 @@ export const InteriorProductsSection: React.FC<InteriorProductsSectionProps> = (
                         src={product.image}
                         alt={product.name}
                         className="w-full h-full object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                        loading="lazy"
+                        loading="eager"
                         referrerPolicy="no-referrer"
                       />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />

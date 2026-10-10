@@ -1,110 +1,304 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { pb } from '../../lib/pocketbase';
+import { supabase } from '../../lib/supabase';
 
-interface Lead {
+type Staff = {
   id: string;
-  referenceCode?: string;
-  name: string;
-  phone: string;
+  user_id: string;
+  staff_code: string;
+  full_name: string;
   email: string;
-  company?: string;
-  projectType?: string;
-  message?: string;
-  source?: string;
-  status: string;
-  created: string;
-}
+  role: string;
+  department: string;
+  designation?: string;
+  is_active: boolean;
+};
 
-const menuItems = [
+type Lead = {
+  id: number;
+  client_name?: string;
+  company_name?: string;
+  project_type?: string;
+  status?: string;
+  work_status?: string;
+  created_at?: string;
+};
+
+const ADMIN_MENU = [
   { label: 'Dashboard', icon: '▦', path: '/portal' },
   { label: 'Leads', icon: '◉', path: '/portal/leads' },
   { label: 'Clients', icon: '♙', path: '/portal/clients' },
   { label: 'Projects', icon: '▤', path: '/portal/projects' },
   { label: 'Tasks', icon: '✓', path: '/portal/tasks' },
   { label: 'Quotations', icon: '₹', path: '/portal/quotations' },
+  { label: 'Invoices', icon: '▣', path: '/portal/invoices' },
   { label: 'Staff', icon: '♟', path: '/portal/staff' },
-  { label: 'Documents', icon: '▧', path: '/portal/documents' },
-  { label: 'Notifications', icon: '◌', path: '/portal/notifications' },
 ];
 
-const pipelineStages = [
-  'NEW',
-  'CONTACTED',
-  'QUALIFIED',
-  'MEETING',
-  'SITE VISIT',
-  'QUOTATION',
-  'NEGOTIATION',
-  'WON',
+const STAFF_MENU = [
+  { label: 'Dashboard', icon: '▦', path: '/portal' },
+  { label: 'My Leads', icon: '◉', path: '/portal/leads' },
+  { label: 'My Tasks', icon: '✓', path: '/portal/tasks' },
 ];
+
+function getDepartmentTitle(department: string) {
+  switch (department) {
+    case 'INTERIOR DESIGN':
+      return 'Interior Design';
+
+    case 'TELECALLING':
+      return 'Telecalling';
+
+    case 'AUTOMATION':
+      return 'Automation';
+
+    case 'ELEVATORS':
+      return 'Elevators';
+
+    default:
+      return department || 'SRL Team';
+  }
+}
+
+function getDepartmentDescription(department: string) {
+  switch (department) {
+    case 'INTERIOR DESIGN':
+      return 'Manage assigned interior design enquiries, customers and follow-ups.';
+
+    case 'TELECALLING':
+      return 'Manage assigned calls, customer follow-ups and enquiry conversion.';
+
+    case 'AUTOMATION':
+      return 'Manage assigned automation enquiries, smart solutions and follow-ups.';
+
+    case 'ELEVATORS':
+      return 'Manage assigned elevator enquiries, requirements and follow-ups.';
+
+    default:
+      return 'Manage your assigned SRL Infra Developers work.';
+  }
+}
+
+function getDepartmentIcon(department: string) {
+  switch (department) {
+    case 'INTERIOR DESIGN':
+      return '⌂';
+
+    case 'TELECALLING':
+      return '☎';
+
+    case 'AUTOMATION':
+      return '⚙';
+
+    case 'ELEVATORS':
+      return '↕';
+
+    default:
+      return '◉';
+  }
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const currentUser = pb.authStore.record;
-
-  // -----------------------------------------
-  // LEAD STATE
-  // -----------------------------------------
-
+  const [staff, setStaff] = useState<Staff | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [loadingLeads, setLoadingLeads] = useState(true);
-  const [leadError, setLeadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // -----------------------------------------
-  // LOAD LEADS FROM POCKETBASE
-  // -----------------------------------------
+  const isAdmin =
+    staff?.role?.toUpperCase() === 'ADMIN';
 
-  useEffect(() => {
-    const loadLeads = async () => {
-      try {
-        setLoadingLeads(true);
-        setLeadError('');
+  const department =
+    staff?.department?.toUpperCase() || '';
 
-        const records = await pb.collection('leads').getFullList<Lead>({
-          sort: '-created',
+  const departmentTitle =
+    getDepartmentTitle(department);
+
+  const loadDashboard = async () => {
+    try {
+      setLoading(true);
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!user) {
+        navigate('/portal/login', {
+          replace: true,
         });
 
-        setLeads(records);
-      } catch (error) {
-        console.error('Error loading leads:', error);
-        setLeadError('Unable to load leads right now.');
-      } finally {
-        setLoadingLeads(false);
+        return;
       }
-    };
 
-    loadLeads();
+      const {
+        data: staffData,
+        error: staffError,
+      } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          staff_code,
+          full_name,
+          email,
+          role,
+          department,
+          designation,
+          is_active
+        `)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (staffError) {
+        throw staffError;
+      }
+
+      if (!staffData) {
+        await supabase.auth.signOut();
+
+        navigate('/portal/login', {
+          replace: true,
+        });
+
+        return;
+      }
+
+      setStaff(staffData as Staff);
+
+      const {
+        data: leadData,
+        error: leadError,
+      } = await supabase
+        .from('leads')
+        .select(`
+          id,
+          client_name,
+          company_name,
+          project_type,
+          status,
+          work_status,
+          created_at
+        `)
+        .order('created_at', {
+          ascending: false,
+        })
+        .limit(100);
+
+      if (leadError) {
+        throw leadError;
+      }
+
+      setLeads((leadData || []) as Lead[]);
+    } catch (error: any) {
+      console.error(
+        'Dashboard loading failed:',
+        error
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!session) {
+          navigate('/portal/login', {
+            replace: true,
+          });
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // -----------------------------------------
-  // LIVE CRM COUNTS
-  // -----------------------------------------
+  const stats = useMemo(() => {
+    return {
+      total: leads.length,
 
-  const newLeadsCount = leads.filter(
-    (lead) => lead.status === 'NEW'
-  ).length;
+      newLeads: leads.filter(
+        (lead) => lead.status === 'NEW'
+      ).length,
 
-  // -----------------------------------------
-  // LOGOUT
-  // -----------------------------------------
+      contacted: leads.filter(
+        (lead) => lead.status === 'CONTACTED'
+      ).length,
 
-  const handleLogout = () => {
-    pb.authStore.clear();
-    navigate('/portal/login');
+      qualified: leads.filter(
+        (lead) => lead.status === 'QUALIFIED'
+      ).length,
+
+      quotation: leads.filter(
+        (lead) => lead.status === 'QUOTATION'
+      ).length,
+
+      won: leads.filter(
+        (lead) => lead.status === 'WON'
+      ).length,
+
+      active: leads.filter(
+        (lead) =>
+          lead.status !== 'WON' &&
+          lead.status !== 'LOST'
+      ).length,
+
+      assigned: leads.filter(
+        (lead) =>
+          lead.work_status === 'ASSIGNED'
+      ).length,
+    };
+  }, [leads]);
+
+  const recentLeads = leads.slice(0, 6);
+
+  const menuItems = isAdmin
+    ? ADMIN_MENU
+    : STAFF_MENU;
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+
+    navigate('/portal/login', {
+      replace: true,
+    });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f3]">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-black/10 border-t-black rounded-full animate-spin mx-auto" />
+
+          <p className="mt-4 text-sm text-gray-500">
+            Loading SRL CRM...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f5f3] text-[#171717] flex">
 
-      {/* =========================================
-          SIDEBAR
-      ========================================== */}
-
       <aside className="w-64 bg-[#111111] text-white min-h-screen hidden md:flex flex-col">
 
-        {/* Brand */}
         <div className="px-6 py-6 border-b border-white/10">
 
           <img
@@ -113,7 +307,7 @@ export default function Dashboard() {
             className="w-12 h-12 object-contain mb-4"
           />
 
-          <h1 className="text-lg font-semibold tracking-wide">
+          <h1 className="text-lg font-semibold">
             SRL INFRA
           </h1>
 
@@ -127,47 +321,41 @@ export default function Dashboard() {
 
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
 
-          {menuItems.map((item, index) => (
+          {menuItems.map((item) => {
+            const active =
+              window.location.pathname ===
+              item.path;
 
-            <button
-              key={item.label}
-              onClick={() => {
-                if (index === 0) {
-                  navigate('/portal');
-                } else {
-                  navigate(item.path);
+            return (
+              <button
+                key={item.path}
+                onClick={() =>
+                  navigate(item.path)
                 }
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition ${
-                index === 0
-                  ? 'bg-white text-black'
-                  : 'text-gray-300 hover:bg-white/10 hover:text-white'
-              }`}
-            >
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition ${
+                  active
+                    ? 'bg-white text-black'
+                    : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <span className="w-5 text-center">
+                  {item.icon}
+                </span>
 
-              <span className="w-5 text-center">
-                {item.icon}
-              </span>
-
-              <span>
-                {item.label}
-              </span>
-
-            </button>
-
-          ))}
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
 
         </nav>
 
-        {/* Bottom */}
         <div className="p-4 border-t border-white/10">
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-300 hover:bg-red-500/10 hover:text-red-300 transition"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-300 hover:bg-red-500/10 hover:text-red-300"
           >
             <span>↪</span>
             Logout
@@ -177,232 +365,145 @@ export default function Dashboard() {
 
       </aside>
 
-      {/* =========================================
-          MAIN
-      ========================================== */}
-
       <main className="flex-1 min-w-0">
-
-        {/* =========================================
-            TOP BAR
-        ========================================== */}
 
         <header className="h-20 bg-white border-b border-black/5 flex items-center justify-between px-6 md:px-10">
 
           <div>
 
             <p className="text-xs uppercase tracking-widest text-gray-400">
-              Operational CRM
+              {isAdmin
+                ? 'Administration'
+                : departmentTitle}
             </p>
 
             <h2 className="text-xl md:text-2xl font-semibold mt-1">
-              Dashboard
+              {isAdmin
+                ? 'Admin Dashboard'
+                : `${departmentTitle} Dashboard`}
             </h2>
 
           </div>
 
           <div className="flex items-center gap-4">
 
-            <button
-              onClick={() => navigate('/portal/notifications')}
-              className="w-10 h-10 rounded-full border border-black/10 hover:bg-gray-50 transition"
-              title="Notifications"
-            >
-              🔔
-            </button>
-
             <div className="hidden sm:block text-right">
 
               <p className="text-sm font-medium">
-                {currentUser?.name ||
-                  currentUser?.email ||
-                  'Staff'}
+                {staff.full_name}
               </p>
 
               <p className="text-xs text-gray-400">
-                SRL Team
+                {isAdmin
+                  ? 'Administrator'
+                  : `${departmentTitle} Staff`}
               </p>
 
             </div>
 
             <div className="w-10 h-10 rounded-full bg-[#111111] text-white flex items-center justify-center font-semibold">
-
-              {(currentUser?.name ||
-                currentUser?.email ||
-                'S')
+              {staff.full_name
                 .charAt(0)
                 .toUpperCase()}
-
             </div>
 
           </div>
 
         </header>
 
-        {/* =========================================
-            CONTENT
-        ========================================== */}
-
         <div className="p-6 md:p-10">
-
-          {/* =========================================
-              WELCOME
-          ========================================== */}
 
           <section className="mb-8">
 
-            <p className="text-sm text-gray-500">
-              Welcome back,
-            </p>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
 
-            <h3 className="text-2xl md:text-3xl font-semibold mt-1">
-              {currentUser?.name || 'SRL Team'}
-            </h3>
+              <div>
 
-            <p className="text-gray-500 mt-2 max-w-2xl">
-              Manage enquiries, clients, projects, staff assignments
-              and quotations from one operational workspace.
-            </p>
+                <p className="text-sm text-gray-500">
+                  Welcome back,
+                </p>
 
-          </section>
+                <h3 className="text-2xl md:text-3xl font-semibold mt-1">
+                  {staff.full_name}
+                </h3>
 
-          {/* =========================================
-              STAT CARDS
-          ========================================== */}
-
-          <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-10">
-
-            {/* New Leads */}
-
-            <div className="bg-white rounded-2xl border border-black/5 p-6 shadow-sm">
-
-              <div className="flex items-center justify-between">
-
-                <div className="w-11 h-11 rounded-xl bg-[#111111] text-white flex items-center justify-center text-lg">
-                  ◉
-                </div>
-
-                <span className="text-xs text-gray-400">
-                  LIVE
-                </span>
+                <p className="text-gray-500 mt-2 max-w-2xl">
+                  {isAdmin
+                    ? 'Manage the complete SRL Infra Developers CRM from one workspace.'
+                    : getDepartmentDescription(
+                        department
+                      )}
+                </p>
 
               </div>
 
-              <p className="text-sm text-gray-500 mt-6">
-                New Leads
-              </p>
-
-              <p className="text-3xl font-semibold mt-1">
-                {loadingLeads ? '—' : newLeadsCount}
-              </p>
-
-              <p className="text-xs text-gray-400 mt-2">
-                Awaiting follow-up
-              </p>
+              <div className="w-16 h-16 rounded-2xl bg-[#111111] text-white flex items-center justify-center text-3xl">
+                {isAdmin
+                  ? '◆'
+                  : getDepartmentIcon(
+                      department
+                    )}
+              </div>
 
             </div>
 
-            {/* Active Projects */}
+            <div className="flex flex-wrap gap-2 mt-5">
 
-            <div className="bg-white rounded-2xl border border-black/5 p-6 shadow-sm">
+              <span className="px-3 py-1.5 rounded-full bg-black text-white text-xs">
+                {staff.staff_code}
+              </span>
 
-              <div className="flex items-center justify-between">
+              <span className="px-3 py-1.5 rounded-full bg-white border border-black/10 text-xs">
+                {staff.role}
+              </span>
 
-                <div className="w-11 h-11 rounded-xl bg-[#111111] text-white flex items-center justify-center text-lg">
-                  ▤
-                </div>
-
-                <span className="text-xs text-gray-400">
-                  CRM
-                </span>
-
-              </div>
-
-              <p className="text-sm text-gray-500 mt-6">
-                Active Projects
-              </p>
-
-              <p className="text-3xl font-semibold mt-1">
-                0
-              </p>
-
-              <p className="text-xs text-gray-400 mt-2">
-                Currently in progress
-              </p>
-
-            </div>
-
-            {/* Pending Quotations */}
-
-            <div className="bg-white rounded-2xl border border-black/5 p-6 shadow-sm">
-
-              <div className="flex items-center justify-between">
-
-                <div className="w-11 h-11 rounded-xl bg-[#111111] text-white flex items-center justify-center text-lg">
-                  ₹
-                </div>
-
-                <span className="text-xs text-gray-400">
-                  CRM
-                </span>
-
-              </div>
-
-              <p className="text-sm text-gray-500 mt-6">
-                Pending Quotations
-              </p>
-
-              <p className="text-3xl font-semibold mt-1">
-                0
-              </p>
-
-              <p className="text-xs text-gray-400 mt-2">
-                Awaiting response
-              </p>
-
-            </div>
-
-            {/* Open Tasks */}
-
-            <div className="bg-white rounded-2xl border border-black/5 p-6 shadow-sm">
-
-              <div className="flex items-center justify-between">
-
-                <div className="w-11 h-11 rounded-xl bg-[#111111] text-white flex items-center justify-center text-lg">
-                  ✓
-                </div>
-
-                <span className="text-xs text-gray-400">
-                  CRM
-                </span>
-
-              </div>
-
-              <p className="text-sm text-gray-500 mt-6">
-                Open Tasks
-              </p>
-
-              <p className="text-3xl font-semibold mt-1">
-                0
-              </p>
-
-              <p className="text-xs text-gray-400 mt-2">
-                Assigned to team
-              </p>
+              <span className="px-3 py-1.5 rounded-full bg-white border border-black/10 text-xs">
+                {isAdmin
+                  ? 'ALL DEPARTMENTS'
+                  : departmentTitle}
+              </span>
 
             </div>
 
           </section>
 
-          {/* =========================================
-              WORKSPACE
-          ========================================== */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
+
+            <StatCard
+              title={
+                isAdmin
+                  ? 'Total Leads'
+                  : 'My Leads'
+              }
+              value={stats.total}
+              description="Accessible enquiries"
+              icon="◉"
+            />
+
+            <StatCard
+              title="New Leads"
+              value={stats.newLeads}
+              description="Awaiting action"
+              icon="✦"
+            />
+
+            <StatCard
+              title="Active Work"
+              value={stats.active}
+              description="Open enquiries"
+              icon="▤"
+            />
+
+            <StatCard
+              title="Won"
+              value={stats.won}
+              description="Converted enquiries"
+              icon="✓"
+            />
+
+          </section>
 
           <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-            {/* =====================================
-                RECENT LEADS
-            ====================================== */}
 
             <div className="xl:col-span-2 bg-white rounded-2xl border border-black/5 shadow-sm">
 
@@ -411,17 +512,21 @@ export default function Dashboard() {
                 <div>
 
                   <h3 className="font-semibold">
-                    Recent Leads
+                    {isAdmin
+                      ? 'Recent Leads'
+                      : `My ${departmentTitle} Leads`}
                   </h3>
 
                   <p className="text-xs text-gray-400 mt-1">
-                    Latest customer enquiries
+                    Latest accessible enquiries
                   </p>
 
                 </div>
 
                 <button
-                  onClick={() => navigate('/portal/leads')}
+                  onClick={() =>
+                    navigate('/portal/leads')
+                  }
                   className="text-sm font-medium hover:underline"
                 >
                   View all
@@ -429,103 +534,86 @@ export default function Dashboard() {
 
               </div>
 
-              {/* Lead Content */}
+              {recentLeads.length === 0 ? (
 
-              <div className="p-6">
+                <div className="p-12 text-center">
 
-                {loadingLeads ? (
-
-                  <div className="py-10 text-center">
-
-                    <p className="text-sm text-gray-400">
-                      Loading leads...
-                    </p>
-
+                  <div className="text-4xl mb-4">
+                    {isAdmin
+                      ? '◉'
+                      : getDepartmentIcon(
+                          department
+                        )}
                   </div>
 
-                ) : leadError ? (
+                  <h4 className="font-medium">
+                    No leads available
+                  </h4>
 
-                  <div className="py-10 text-center">
+                  <p className="text-sm text-gray-400 mt-2">
+                    {isAdmin
+                      ? 'New website enquiries will appear here.'
+                      : 'Leads assigned to you will appear here.'}
+                  </p>
 
-                    <p className="text-sm text-red-500">
-                      {leadError}
-                    </p>
+                </div>
 
-                  </div>
+              ) : (
 
-                ) : leads.length === 0 ? (
+                <div className="divide-y divide-black/5">
 
-                  <div className="py-10 text-center">
+                  {recentLeads.map((lead) => (
 
-                    <div className="text-4xl mb-4">
-                      ◉
-                    </div>
+                    <button
+                      key={lead.id}
+                      onClick={() =>
+                        navigate('/portal/leads')
+                      }
+                      className="w-full text-left p-5 hover:bg-gray-50 transition"
+                    >
 
-                    <h4 className="font-medium">
-                      No leads yet
-                    </h4>
-
-                    <p className="text-sm text-gray-400 mt-2 max-w-md mx-auto">
-                      Website enquiries will appear here automatically.
-                    </p>
-
-                  </div>
-
-                ) : (
-
-                  <div className="space-y-3">
-
-                    {leads.slice(0, 5).map((lead) => (
-
-                      <div
-                        key={lead.id}
-                        className="flex items-center justify-between gap-4 p-4 rounded-xl bg-[#f5f5f3] border border-black/5"
-                      >
+                      <div className="flex items-center justify-between gap-4">
 
                         <div className="min-w-0">
 
                           <p className="font-medium truncate">
-                            {lead.name}
+                            {lead.client_name ||
+                              lead.company_name ||
+                              'Unnamed Client'}
                           </p>
 
-                          <p className="text-xs text-gray-500 mt-1 truncate">
-
-                            {lead.projectType ||
-                              'General Enquiry'}
-
-                            {lead.company
-                              ? ` · ${lead.company}`
-                              : ''}
-
+                          <p className="text-xs text-gray-400 mt-1">
+                            {lead.project_type ||
+                              'Project enquiry'}
                           </p>
 
-                          {lead.referenceCode && (
-                            <p className="text-[10px] text-gray-400 mt-1">
-                              {lead.referenceCode}
-                            </p>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1">
+
+                          <span className="shrink-0 px-2.5 py-1 rounded-full bg-gray-100 text-[10px] font-medium">
+                            {lead.status || 'NEW'}
+                          </span>
+
+                          {lead.work_status && (
+                            <span className="text-[10px] text-gray-400">
+                              {lead.work_status}
+                            </span>
                           )}
 
                         </div>
 
-                        <span className="shrink-0 px-3 py-1 rounded-full bg-white border border-black/10 text-[10px] font-semibold tracking-wide">
-                          {lead.status}
-                        </span>
-
                       </div>
 
-                    ))}
+                    </button>
 
-                  </div>
+                  ))}
 
-                )}
+                </div>
 
-              </div>
+              )}
 
             </div>
-
-            {/* =====================================
-                QUICK ACTIONS
-            ====================================== */}
 
             <div className="bg-[#111111] text-white rounded-2xl p-6 shadow-sm">
 
@@ -534,80 +622,88 @@ export default function Dashboard() {
               </h3>
 
               <p className="text-sm text-gray-400 mt-1">
-                Frequently used CRM actions
+                {isAdmin
+                  ? 'CRM administration'
+                  : `${departmentTitle} workspace`}
               </p>
 
               <div className="mt-6 space-y-3">
 
                 <button
-                  onClick={() => navigate('/portal/leads')}
+                  onClick={() =>
+                    navigate('/portal/leads')
+                  }
                   className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
                 >
 
                   <p className="font-medium">
-                    + Add Lead
+                    {isAdmin
+                      ? 'View All Leads'
+                      : 'View My Leads'}
                   </p>
 
                   <p className="text-xs text-gray-400 mt-1">
-                    Create a new customer enquiry
+                    Open accessible enquiries
                   </p>
 
                 </button>
 
-                <button
-                  onClick={() => navigate('/portal/clients')}
-                  className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
-                >
+                {!isAdmin && (
+                  <button
+                    onClick={() =>
+                      navigate('/portal/tasks')
+                    }
+                    className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
+                  >
+                    <p className="font-medium">
+                      My Tasks
+                    </p>
 
-                  <p className="font-medium">
-                    + Add Client
-                  </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Check assigned work
+                    </p>
+                  </button>
+                )}
 
-                  <p className="text-xs text-gray-400 mt-1">
-                    Register a new client
-                  </p>
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() =>
+                        navigate('/portal/staff')
+                      }
+                      className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
+                    >
+                      <p className="font-medium">
+                        Manage Staff
+                      </p>
 
-                </button>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Add and manage employees
+                      </p>
+                    </button>
 
-                <button
-                  onClick={() => navigate('/portal/projects')}
-                  className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
-                >
+                    <button
+                      onClick={() =>
+                        navigate('/portal/quotations')
+                      }
+                      className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
+                    >
+                      <p className="font-medium">
+                        Quotations
+                      </p>
 
-                  <p className="font-medium">
-                    + New Project
-                  </p>
-
-                  <p className="text-xs text-gray-400 mt-1">
-                    Start a project workflow
-                  </p>
-
-                </button>
-
-                <button
-                  onClick={() => navigate('/portal/quotations')}
-                  className="w-full text-left px-4 py-4 rounded-xl bg-white/10 hover:bg-white/15 transition"
-                >
-
-                  <p className="font-medium">
-                    + Create Quotation
-                  </p>
-
-                  <p className="text-xs text-gray-400 mt-1">
-                    Prepare a client quotation
-                  </p>
-
-                </button>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Manage client quotations
+                      </p>
+                    </button>
+                  </>
+                )}
 
               </div>
 
             </div>
 
           </section>
-
-          {/* =========================================
-              LEAD PIPELINE
-          ========================================== */}
 
           <section className="mt-6 bg-white rounded-2xl border border-black/5 shadow-sm p-6">
 
@@ -618,28 +714,40 @@ export default function Dashboard() {
               </h3>
 
               <p className="text-xs text-gray-400 mt-1">
-                Track enquiries through the sales process
+                {isAdmin
+                  ? 'Complete CRM pipeline'
+                  : `Your ${departmentTitle} pipeline`}
               </p>
 
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
 
-              {pipelineStages.map((stage) => {
+              {[
+                'NEW',
+                'CONTACTED',
+                'QUALIFIED',
+                'MEETING',
+                'SITE VISIT',
+                'QUOTATION',
+                'NEGOTIATION',
+                'WON',
+              ].map((stage) => {
 
-                const stageCount = leads.filter(
-                  (lead) => lead.status === stage
-                ).length;
+                const count =
+                  leads.filter(
+                    (lead) =>
+                      lead.status === stage
+                  ).length;
 
                 return (
-
                   <div
                     key={stage}
                     className="rounded-xl bg-[#f5f5f3] p-4 text-center"
                   >
 
                     <p className="text-lg font-semibold">
-                      {loadingLeads ? '—' : stageCount}
+                      {count}
                     </p>
 
                     <p className="text-[10px] tracking-wide text-gray-500 mt-1">
@@ -647,9 +755,7 @@ export default function Dashboard() {
                     </p>
 
                   </div>
-
                 );
-
               })}
 
             </div>
@@ -659,6 +765,48 @@ export default function Dashboard() {
         </div>
 
       </main>
+
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon,
+}: {
+  title: string;
+  value: number;
+  description: string;
+  icon: string;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 p-6 shadow-sm">
+
+      <div className="flex items-center justify-between">
+
+        <div className="w-11 h-11 rounded-xl bg-[#111111] text-white flex items-center justify-center text-lg">
+          {icon}
+        </div>
+
+        <span className="text-xs text-gray-400">
+          LIVE
+        </span>
+
+      </div>
+
+      <p className="text-sm text-gray-500 mt-6">
+        {title}
+      </p>
+
+      <p className="text-3xl font-semibold mt-1">
+        {value}
+      </p>
+
+      <p className="text-xs text-gray-400 mt-2">
+        {description}
+      </p>
 
     </div>
   );

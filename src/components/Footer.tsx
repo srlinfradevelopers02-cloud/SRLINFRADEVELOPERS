@@ -5,7 +5,6 @@ import {
   FaWhatsapp,
   FaInstagram,
   FaYoutube,
-  FaLinkedinIn,
   FaFacebookF,
 } from 'react-icons/fa';
 
@@ -46,11 +45,7 @@ const socialLinks = [
     href: 'https://www.youtube.com/@SRLINFRADEVELOPERS',
     icon: FaYoutube,
   },
-  {
-    name: 'LinkedIn',
-    href: 'https://www.linkedin.com/company/YOUR_COMPANY',
-    icon: FaLinkedinIn,
-  },
+ 
   {
     name: 'X',
     href: 'https://x.com/SRLINFRA',

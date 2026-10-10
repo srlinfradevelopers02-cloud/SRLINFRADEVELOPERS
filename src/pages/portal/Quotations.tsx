@@ -1,67 +1,83 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { pb } from '../../lib/pocketbase';
+import { supabase } from '../../lib/supabase';
 
-type Client = {
-  id: string;
-  clientCode?: string;
-  name: string;
-  phone: string;
+type Lead = {
+  id: number;
+  client_name?: string;
+  company_name?: string;
+  phone?: string;
   email?: string;
-  company?: string;
-  clientType?: string;
-  address?: string;
-  projectType?: string;
-  status?: string;
-  created?: string;
+  project_type?: string;
+  project_location?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  gst_number?: string;
+  pan_number?: string;
 };
 
 type QuotationItem = {
-  id?: string;
-  quotation?: string;
+  id?: number;
+  quotation_id?: number;
   description: string;
   quantity: number;
-  unit?: string;
+  unit: string;
   rate: number;
-  taxRate?: number;
+  tax_rate: number;
   amount: number;
+  created_at?: string;
 };
 
 type Quotation = {
-  id: string;
-  quotationNumber: string;
-  client: string;
-  quotationDate: string;
-  validUntil?: string;
-  projectName?: string;
-  status: string;
+  id: number;
+  lead_id?: number | null;
+  quotation_number: string;
   subtotal: number;
-  discount?: number;
-  tax?: number;
-  grandTotal: number;
-  paymentTerms?: string;
-  notes?: string;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  status: string;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  valid_until?: string | null;
+  payment_terms?: string | null;
+  notes?: string | null;
+  terms_conditions?: string | null;
+  cgst: number;
+  sgst: number;
+  igst: number;
+};
 
-  gstType?: string;
-  gstRate?: number;
-  cgst?: number;
-  sgst?: number;
-  igst?: number;
+type Staff = {
+  id: string;
+  user_id?: string;
+  full_name: string;
+  role: string;
+  department: string;
+  is_active: boolean;
+};
 
-  termsConditions?: string;
-
-  created?: string;
-  updated?: string;
+type FormState = {
+  lead_id: string;
+  valid_until: string;
+  payment_terms: string;
+  notes: string;
+  terms_conditions: string;
+  gst_type: 'NONE' | 'CGST_SGST' | 'IGST';
+  gst_rate: number;
 };
 
 const COMPANY = {
   name: 'SRL INFRA DEVELOPERS',
+  tagline: 'Where expectations meet reality',
   address: [
-    'H.NO: 3, 7-809, D-Mart Road,',
-    'Near SRR Signal, Vivekananda Puri,',
-    'Karimnagar, Telangana – 505001',
+    'D Mart Road, Near SRR Clg Chowrasta',
+    'Karimnagar, Telangana',
   ],
   phone: '7416964666',
+  phone2: '8783546061',
   website: 'www.srlinfra.in',
 };
 
@@ -74,14 +90,14 @@ const DEFAULT_TERMS = `1. This quotation is valid until the validity date mentio
 7. Material specifications and brands shall be finalized as mutually agreed.
 8. This quotation is subject to final confirmation and approval by both parties.`;
 
-const formatCurrency = (value: number = 0) =>
+const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
 
-const formatDate = (value?: string) => {
+const formatDate = (value?: string | null) => {
   if (!value) return '—';
 
   return new Date(value).toLocaleDateString('en-IN', {
@@ -91,8 +107,6 @@ const formatDate = (value?: string) => {
   });
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -101,267 +115,228 @@ const escapeHtml = (value: unknown) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
-function generateQuotationNumber(
-  existing: Quotation[]
-) {
-  const year = new Date().getFullYear();
+const emptyItem = (): QuotationItem => ({
+  description: '',
+  quantity: 1,
+  unit: 'Nos',
+  rate: 0,
+  tax_rate: 0,
+  amount: 0,
+});
 
-  const numbers = existing
-    .map((quotation) => {
-      const match =
-        quotation.quotationNumber?.match(
-          /QT-\d{4}-(\d+)/
-        );
+const emptyForm = (): FormState => ({
+  lead_id: '',
+  valid_until: '',
+  payment_terms: '',
+  notes: '',
+  terms_conditions: DEFAULT_TERMS,
+  gst_type: 'NONE',
+  gst_rate: 0,
+});
 
-      return match ? Number(match[1]) : 0;
-    })
-    .filter((number) => !Number.isNaN(number));
-
-  const next =
-    numbers.length > 0
-      ? Math.max(...numbers) + 1
-      : 1;
-
-  return `QT-${year}-${String(next).padStart(4, '0')}`;
-}
-
-function calculateGST(
-  taxableAmount: number,
-  gstType: string,
-  gstRate: number
-) {
-  const rate = Number(gstRate || 0);
-
-  if (gstType === 'CGST_SGST') {
-    const totalGST =
-      taxableAmount * (rate / 100);
-
-    return {
-      cgst: totalGST / 2,
-      sgst: totalGST / 2,
-      igst: 0,
-      totalTax: totalGST,
-    };
-  }
-
-  if (gstType === 'IGST') {
-    const igst =
-      taxableAmount * (rate / 100);
-
-    return {
-      cgst: 0,
-      sgst: 0,
-      igst,
-      totalTax: igst,
-    };
-  }
-
-  return {
-    cgst: 0,
-    sgst: 0,
-    igst: 0,
-    totalTax: 0,
-  };
-}
+const statusOptions = [
+  'DRAFT',
+  'SENT',
+  'NEGOTIATION',
+  'APPROVED',
+  'REJECTED',
+];
 
 export default function Quotations() {
   const navigate = useNavigate();
 
-  const [quotations, setQuotations] =
-    useState<Quotation[]>([]);
-
-  const [clients, setClients] =
-    useState<Client[]>([]);
-
+  const [staff, setStaff] = useState<Staff | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [selectedQuotation, setSelectedQuotation] =
     useState<Quotation | null>(null);
 
-  const [selectedItems, setSelectedItems] =
-    useState<QuotationItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<QuotationItem[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const [showDetails, setShowDetails] =
-    useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  const [showCreate, setShowCreate] =
-    useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
-  const [showEdit, setShowEdit] =
-    useState(false);
+  const [form, setForm] = useState<FormState>(emptyForm());
+  const [items, setItems] = useState<QuotationItem[]>([emptyItem()]);
+  const [discount, setDiscount] = useState(0);
 
-  const [search, setSearch] =
-    useState('');
+  useEffect(() => {
+    initialize();
+  }, []);
 
-  const [statusFilter, setStatusFilter] =
-    useState('ALL');
+  const initialize = async () => {
+    setLoading(true);
+    setError('');
 
-  const [saving, setSaving] =
-    useState(false);
-
-  const [form, setForm] = useState({
-    client: '',
-    quotationDate: todayISO(),
-    validUntil: '',
-    projectName: '',
-    status: 'DRAFT',
-    paymentTerms: '',
-    notes: '',
-
-    gstType: 'NONE',
-    gstRate: 0,
-
-    termsConditions: DEFAULT_TERMS,
-  });
-
-  const [items, setItems] = useState<QuotationItem[]>([
-    {
-      description: '',
-      quantity: 1,
-      unit: 'Nos',
-      rate: 0,
-      taxRate: 0,
-      amount: 0,
-    },
-  ]);
-
-  const [discount, setDiscount] =
-    useState(0);
-
-  const loadData = async () => {
     try {
-      setLoading(true);
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-      const [
-        quotationResult,
-        clientResult,
-      ] = await Promise.all([
-        pb.collection('quotations')
-          .getFullList<Quotation>({
-            sort: '-created',
-          }),
+      if (authError) throw authError;
 
-        pb.collection('clients')
-          .getFullList<Client>({
-            sort: 'name',
-          }),
-      ]);
+      if (!user) {
+        throw new Error('Please login first.');
+      }
 
-      setQuotations(quotationResult);
-      setClients(clientResult);
-    } catch (error) {
-      console.error(
-        'Failed to load quotations:',
-        error
-      );
+      const { data: staffData, error: staffError } =
+        await supabase
+          .from('staff')
+          .select(
+            'id, user_id, full_name, role, department, is_active'
+          )
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
 
-      alert(
-        'Unable to load quotation data.'
+      if (staffError) throw staffError;
+
+      if (!staffData) {
+        throw new Error(
+          'Your account is not registered as an active SRL staff member.'
+        );
+      }
+
+      const role = staffData.role?.toUpperCase();    
+      if (role !== 'ADMIN' && role !== 'MANAGER') {
+        throw new Error(
+          'Quotation management is available only to administrators.'
+        );
+      }
+
+      await loadData();
+    } catch (err: any) {
+      console.error('Quotation initialization failed:', err);
+
+      setError(
+        err?.message ||
+          'Unable to initialize quotation management.'
       );
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const loadData = async () => {
+    const [
+      { data: quotationData, error: quotationError },
+      { data: leadData, error: leadError },
+    ] = await Promise.all([
+      supabase
+        .from('quotations')
+        .select('*')
+        .order('created_at', {
+          ascending: false,
+        }),
 
-  const getClient = (
-    clientId?: string
-  ) =>
-    clients.find(
-      (client) => client.id === clientId
-    );
-
-  const filteredQuotations =
-    useMemo(() => {
-      return quotations.filter(
-        (quotation) => {
-          const client =
-            getClient(quotation.client);
-
-          const searchText = [
-            quotation.quotationNumber,
-            quotation.projectName,
-            client?.name,
-            client?.company,
-            client?.phone,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-
-          const matchesSearch =
-            searchText.includes(
-              search.toLowerCase()
-            );
-
-          const matchesStatus =
-            statusFilter === 'ALL' ||
-            quotation.status === statusFilter;
-
-          return (
-            matchesSearch &&
-            matchesStatus
-          );
-        }
-      );
-    }, [
-      quotations,
-      clients,
-      search,
-      statusFilter,
+      supabase
+        .from('leads')
+        .select('*')
+        .order('created_at', {
+          ascending: false,
+        }),
     ]);
 
-  const stats = useMemo(() => {
-    const total =
-      quotations.length;
+    if (quotationError) throw quotationError;
+    if (leadError) throw leadError;
 
-    const draft =
-      quotations.filter(
-        (quotation) =>
-          quotation.status === 'DRAFT'
-      ).length;
+    setQuotations(
+      (quotationData || []) as Quotation[]
+    );
 
-    const sent =
-      quotations.filter(
-        (quotation) =>
-          quotation.status === 'SENT'
-      ).length;
+    setLeads(
+      (leadData || []) as Lead[]
+    );
+  };
 
-    const negotiation =
-      quotations.filter(
-        (quotation) =>
-          quotation.status ===
-          'NEGOTIATION'
-      ).length;
+  const loadQuotationItems = async (
+    quotationId: number
+  ) => {
+    const { data, error } = await supabase
+      .from('quotation_items')
+      .select('*')
+      .eq('quotation_id', quotationId)
+      .order('created_at', {
+        ascending: true,
+      });
 
-    const approved =
-      quotations.filter(
-        (quotation) =>
-          quotation.status === 'APPROVED'
-      ).length;
+    if (error) throw error;
 
-    const value =
-      quotations.reduce(
-        (sum, quotation) =>
-          sum +
-          Number(
-            quotation.grandTotal || 0
-          ),
-        0
-      );
+    const result =
+      (data || []) as QuotationItem[];
 
-    return {
-      total,
-      draft,
-      sent,
-      negotiation,
-      approved,
-      value,
-    };
-  }, [quotations]);
+    setSelectedItems(result);
+
+    return result;
+  };
+
+  const getLead = (
+    leadId?: number | null
+  ) =>
+    leads.find(
+      (lead) =>
+        Number(lead.id) ===
+        Number(leadId)
+    );
+
+  const getLeadName = (
+    leadId?: number | null
+  ) => {
+    const lead = getLead(leadId);
+
+    if (!lead) {
+      return 'Unknown Lead';
+    }
+
+    return (
+      lead.client_name ||
+      lead.company_name ||
+      `Lead #${lead.id}`
+    );
+  };
+
+  const generateQuotationNumber = () => {
+    const year =
+      new Date().getFullYear();
+
+    const numbers = quotations
+      .map((quotation) => {
+        const match =
+          quotation.quotation_number?.match(
+            /QT-(\d{4})-(\d+)/
+          );
+
+        if (!match) return 0;
+
+        if (
+          Number(match[1]) !==
+          year
+        ) {
+          return 0;
+        }
+
+        return Number(match[2]) || 0;
+      })
+      .filter(Boolean);
+
+    const nextNumber =
+      numbers.length > 0
+        ? Math.max(...numbers) + 1
+        : 1;
+
+    return `QT-${year}-${String(
+      nextNumber
+    ).padStart(4, '0')}`;
+  };
 
   const updateItem = (
     index: number,
@@ -394,26 +369,23 @@ export default function Quotations() {
   const addItem = () => {
     setItems((previous) => [
       ...previous,
-      {
-        description: '',
-        quantity: 1,
-        unit: 'Nos',
-        rate: 0,
-        taxRate: 0,
-        amount: 0,
-      },
+      emptyItem(),
     ]);
   };
 
   const removeItem = (
     index: number
   ) => {
-    setItems((previous) =>
-      previous.filter(
+    setItems((previous) => {
+      if (previous.length === 1) {
+        return [emptyItem()];
+      }
+
+      return previous.filter(
         (_, itemIndex) =>
           itemIndex !== index
-      )
-    );
+      );
+    });
   };
 
   const subtotal = useMemo(
@@ -429,328 +401,403 @@ export default function Quotations() {
 
   const taxableAmount = Math.max(
     0,
-    subtotal - Number(discount || 0)
+    subtotal -
+      Number(discount || 0)
   );
 
-  const gst = calculateGST(
+  const totalTax = useMemo(() => {
+    const rate =
+      Number(form.gst_rate || 0);
+
+    if (
+      !rate ||
+      form.gst_type === 'NONE'
+    ) {
+      return 0;
+    }
+
+    return (
+      (taxableAmount * rate) /
+      100
+    );
+  }, [
     taxableAmount,
-    form.gstType,
-    Number(form.gstRate || 0)
-  );
+    form.gst_rate,
+    form.gst_type,
+  ]);
+
+  const cgst =
+    form.gst_type ===
+    'CGST_SGST'
+      ? totalTax / 2
+      : 0;
+
+  const sgst =
+    form.gst_type ===
+    'CGST_SGST'
+      ? totalTax / 2
+      : 0;
+
+  const igst =
+    form.gst_type === 'IGST'
+      ? totalTax
+      : 0;
 
   const grandTotal =
-    taxableAmount + gst.totalTax;
+    taxableAmount + totalTax;
 
-  const resetForm = () => {
-    setForm({
-      client: '',
-      quotationDate: todayISO(),
-      validUntil: '',
-      projectName: '',
-      status: 'DRAFT',
-      paymentTerms: '',
-      notes: '',
-      gstType: 'NONE',
-      gstRate: 0,
-      termsConditions: DEFAULT_TERMS,
-    });
+  const filteredQuotations =
+    useMemo(() => {
+      const query =
+        search.trim().toLowerCase();
 
-    setItems([
-      {
-        description: '',
-        quantity: 1,
-        unit: 'Nos',
-        rate: 0,
-        taxRate: 0,
-        amount: 0,
-      },
+      return quotations.filter(
+        (quotation) => {
+          const lead = getLead(
+            quotation.lead_id
+          );
+
+          const matchesSearch =
+            !query ||
+            quotation.quotation_number
+              ?.toLowerCase()
+              .includes(query) ||
+            lead?.client_name
+              ?.toLowerCase()
+              .includes(query) ||
+            lead?.company_name
+              ?.toLowerCase()
+              .includes(query) ||
+            lead?.phone
+              ?.toLowerCase()
+              .includes(query) ||
+            lead?.project_type
+              ?.toLowerCase()
+              .includes(query);
+
+          const matchesStatus =
+            statusFilter === 'ALL' ||
+            quotation.status ===
+              statusFilter;
+
+          return (
+            matchesSearch &&
+            matchesStatus
+          );
+        }
+      );
+    }, [
+      quotations,
+      leads,
+      search,
+      statusFilter,
     ]);
 
+  const resetForm = () => {
+    setForm(emptyForm());
+    setItems([emptyItem()]);
     setDiscount(0);
   };
 
-  const createQuotation =
-    async () => {
-      if (!form.client) {
-        alert(
-          'Please select a client.'
-        );
-        return;
+  const openCreate = () => {
+    resetForm();
+    setShowCreate(true);
+  };
+
+  const createQuotation = async () => {
+    if (!staff) {
+      alert(
+        'Staff session not found.'
+      );
+      return;
+    }
+
+    if (!form.lead_id) {
+      alert(
+        'Please select a lead.'
+      );
+      return;
+    }
+
+    const validItems =
+      items.filter(
+        (item) =>
+          item.description.trim() &&
+          Number(item.quantity) > 0
+      );
+
+    if (
+      validItems.length === 0
+    ) {
+      alert(
+        'Please add at least one quotation item.'
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const quotationNumber =
+        generateQuotationNumber();
+
+      const {
+        data: quotation,
+        error: quotationError,
+      } = await supabase
+        .from('quotations')
+        .insert({
+          lead_id:
+            Number(form.lead_id),
+
+          quotation_number:
+            quotationNumber,
+
+          subtotal,
+
+          tax_amount:
+            totalTax,
+
+          discount_amount:
+            Number(discount || 0),
+
+          total_amount:
+            grandTotal,
+
+          status: 'DRAFT',
+
+          created_by:
+            staff.id,
+
+          valid_until:
+            form.valid_until ||
+            null,
+
+          payment_terms:
+            form.payment_terms ||
+            null,
+
+          notes:
+            form.notes || null,
+
+          terms_conditions:
+            form.terms_conditions ||
+            null,
+
+          cgst,
+
+          sgst,
+
+          igst,
+        })
+        .select()
+        .single();
+
+      if (quotationError) {
+        throw quotationError;
       }
 
-      const validItems =
-        items.filter(
-          (item) =>
-            item.description.trim() &&
-            Number(item.quantity) > 0
+      const quotationItems =
+        validItems.map(
+          (item) => ({
+            quotation_id:
+              quotation.id,
+
+            description:
+              item.description.trim(),
+
+            quantity:
+              Number(
+                item.quantity || 0
+              ),
+
+            unit:
+              item.unit || 'Nos',
+
+            rate:
+              Number(
+                item.rate || 0
+              ),
+
+            tax_rate:
+              Number(
+                form.gst_rate || 0
+              ),
+
+            amount:
+              Number(
+                item.amount || 0
+              ),
+          })
         );
 
-      if (validItems.length === 0) {
-        alert(
-          'Please add at least one quotation item.'
+      const {
+        error: itemError,
+      } = await supabase
+        .from('quotation_items')
+        .insert(
+          quotationItems
         );
-        return;
-      }
 
-      try {
-        setSaving(true);
-
-        const quotationNumber =
-          generateQuotationNumber(
-            quotations
+      if (itemError) {
+        await supabase
+          .from('quotations')
+          .delete()
+          .eq(
+            'id',
+            quotation.id
           );
 
-        const quotation =
-          await pb
-            .collection('quotations')
-            .create<Quotation>({
-              quotationNumber,
-              client: form.client,
-              quotationDate:
-                form.quotationDate,
-              validUntil:
-                form.validUntil || '',
-              projectName:
-                form.projectName,
-              status: 'DRAFT',
-              subtotal,
-              discount:
-                Number(discount || 0),
-              tax: gst.totalTax,
-              grandTotal,
-              paymentTerms:
-                form.paymentTerms,
-              notes: form.notes,
-
-              gstType:
-                form.gstType,
-
-              gstRate:
-                Number(
-                  form.gstRate || 0
-                ),
-
-              cgst: gst.cgst,
-              sgst: gst.sgst,
-              igst: gst.igst,
-
-              termsConditions:
-                form.termsConditions,
-            });
-
-        await Promise.all(
-          validItems.map((item) =>
-            pb
-              .collection(
-                'quotation_items'
-              )
-              .create({
-                quotation:
-                  quotation.id,
-                description:
-                  item.description,
-                quantity:
-                  Number(
-                    item.quantity || 0
-                  ),
-                unit:
-                  item.unit || '',
-                rate:
-                  Number(
-                    item.rate || 0
-                  ),
-                taxRate:
-                  Number(
-                    item.taxRate || 0
-                  ),
-                amount:
-                  Number(
-                    item.amount || 0
-                  ),
-              })
-          )
-        );
-
-        alert(
-          `Quotation ${quotationNumber} created successfully.`
-        );
-
-        setShowCreate(false);
-        resetForm();
-
-        await loadData();
-      } catch (error: any) {
-        console.error(
-          'Quotation creation failed:',
-          error
-        );
-
-        alert(
-          error?.message ||
-            'Failed to create quotation.'
-        );
-      } finally {
-        setSaving(false);
+        throw itemError;
       }
-    };
 
-  const loadQuotationItems =
-    async (
-      quotationId: string
-    ) => {
-      try {
-        const result =
-          await pb
-            .collection(
-              'quotation_items'
-            )
-            .getFullList<QuotationItem>({
-              filter: `quotation = "${quotationId}"`,
-              sort: 'created',
-            });
+      alert(
+        `Quotation ${quotationNumber} created successfully.`
+      );
 
-        setSelectedItems(result);
+      setShowCreate(false);
 
-        return result;
-      } catch (error) {
-        console.error(
-          'Failed to load quotation items:',
-          error
-        );
+      resetForm();
 
-        setSelectedItems([]);
+      await loadData();
+    } catch (err: any) {
+      console.error(
+        'Quotation creation failed:',
+        err
+      );
 
-        return [];
-      }
-    };
+      alert(
+        err?.message ||
+          'Failed to create quotation.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const openQuotation = async (
     quotation: Quotation
   ) => {
-    setSelectedQuotation(
-      quotation
-    );
+    try {
+      setSelectedQuotation(
+        quotation
+      );
 
-    await loadQuotationItems(
-      quotation.id
-    );
+      await loadQuotationItems(
+        quotation.id
+      );
 
-    setShowDetails(true);
+      setShowDetails(true);
+    } catch (err: any) {
+      console.error(err);
+
+      alert(
+        err?.message ||
+          'Unable to load quotation items.'
+      );
+    }
   };
 
-  const updateStatus =
-    async (
-      quotation: Quotation,
-      status: string
-    ) => {
-      try {
-        const updated =
-          await pb
-            .collection('quotations')
-            .update<Quotation>(
-              quotation.id,
-              {
-                status,
-              }
-            );
-
-        setQuotations(
-          (previous) =>
-            previous.map(
-              (item) =>
-                item.id === updated.id
-                  ? updated
-                  : item
-            )
-        );
-
-        setSelectedQuotation(
-          updated
-        );
-      } catch (error) {
-        console.error(error);
-
-        alert(
-          'Unable to update quotation status.'
-        );
-      }
-    };
-
-  const handleCreateInvoice =
-    () => {
-      if (!selectedQuotation) {
-        return;
-      }
-
-      if (
-        selectedQuotation.status !==
-        'APPROVED'
-      ) {
-        alert(
-          'Only approved quotations can be converted into invoices.'
-        );
-
-        return;
-      }
-
-      navigate(
-        `/portal/invoices?quotation=${selectedQuotation.id}`
+  const openEdit = async (
+    quotation: Quotation
+  ) => {
+    try {
+      setSelectedQuotation(
+        quotation
       );
-    };
-
-  const startEdit =
-    async () => {
-      if (!selectedQuotation) {
-        return;
-      }
 
       const quotationItems =
         await loadQuotationItems(
-          selectedQuotation.id
+          quotation.id
         );
 
+      let gstType:
+        | 'NONE'
+        | 'CGST_SGST'
+        | 'IGST' = 'NONE';
+
+      const tax =
+        Number(
+          quotation.tax_amount || 0
+        );
+
+      if (
+        Number(
+          quotation.cgst || 0
+        ) > 0 ||
+        Number(
+          quotation.sgst || 0
+        ) > 0
+      ) {
+        gstType =
+          'CGST_SGST';
+      } else if (
+        Number(
+          quotation.igst || 0
+        ) > 0
+      ) {
+        gstType = 'IGST';
+      }
+
+      const taxable =
+        Math.max(
+          0,
+          Number(
+            quotation.subtotal || 0
+          ) -
+            Number(
+              quotation.discount_amount ||
+                0
+            )
+        );
+
+      const calculatedRate =
+        taxable > 0 &&
+        tax > 0
+          ? Number(
+              (
+                (tax / taxable) *
+                100
+              ).toFixed(2)
+            )
+          : 0;
+
       setForm({
-        client:
-          selectedQuotation.client ||
-          '',
-        quotationDate:
-          selectedQuotation.quotationDate ||
-          todayISO(),
-        validUntil:
-          selectedQuotation.validUntil
-            ? selectedQuotation.validUntil.slice(
-                0,
-                10
+        lead_id:
+          quotation.lead_id
+            ? String(
+                quotation.lead_id
               )
             : '',
-        projectName:
-          selectedQuotation.projectName ||
+
+        valid_until:
+          quotation.valid_until
+            ? String(
+                quotation.valid_until
+              ).slice(0, 10)
+            : '',
+
+        payment_terms:
+          quotation.payment_terms ||
           '',
-        status:
-          selectedQuotation.status ||
-          'DRAFT',
-        paymentTerms:
-          selectedQuotation.paymentTerms ||
-          '',
+
         notes:
-          selectedQuotation.notes ||
-          '',
-        gstType:
-          selectedQuotation.gstType ||
-          'NONE',
-        gstRate:
-          Number(
-            selectedQuotation.gstRate ||
-              0
-          ),
-        termsConditions:
-          selectedQuotation.termsConditions ||
+          quotation.notes || '',
+
+        terms_conditions:
+          quotation.terms_conditions ||
           DEFAULT_TERMS,
+
+        gst_type:
+          gstType,
+
+        gst_rate:
+          calculatedRate,
       });
 
       setDiscount(
         Number(
-          selectedQuotation.discount ||
+          quotation.discount_amount ||
             0
         )
       );
@@ -760,325 +807,381 @@ export default function Quotations() {
           ? quotationItems.map(
               (item) => ({
                 id: item.id,
+
+                quotation_id:
+                  item.quotation_id,
+
                 description:
-                  item.description,
+                  item.description ||
+                  '',
+
                 quantity:
                   Number(
                     item.quantity || 0
                   ),
+
                 unit:
                   item.unit || 'Nos',
+
                 rate:
                   Number(
                     item.rate || 0
                   ),
-                taxRate:
+
+                tax_rate:
                   Number(
-                    item.taxRate || 0
+                    item.tax_rate ||
+                      0
                   ),
+
                 amount:
                   Number(
-                    item.amount || 0
+                    item.amount ||
+                      0
                   ),
               })
             )
-          : [
-              {
-                description: '',
-                quantity: 1,
-                unit: 'Nos',
-                rate: 0,
-                taxRate: 0,
-                amount: 0,
-              },
-            ]
+          : [emptyItem()]
       );
 
       setShowDetails(false);
       setShowEdit(true);
-    };
+    } catch (err: any) {
+      console.error(err);
 
-  const saveEdit =
-    async () => {
-      if (!selectedQuotation) {
-        return;
+      alert(
+        err?.message ||
+          'Unable to open quotation.'
+      );
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!selectedQuotation) {
+      return;
+    }
+
+    if (!form.lead_id) {
+      alert(
+        'Please select a lead.'
+      );
+      return;
+    }
+
+    const validItems =
+      items.filter(
+        (item) =>
+          item.description.trim() &&
+          Number(item.quantity) > 0
+      );
+
+    if (
+      validItems.length === 0
+    ) {
+      alert(
+        'Please add at least one quotation item.'
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const {
+        data: updated,
+        error,
+      } = await supabase
+        .from('quotations')
+        .update({
+          lead_id:
+            Number(form.lead_id),
+
+          subtotal,
+
+          tax_amount:
+            totalTax,
+
+          discount_amount:
+            Number(discount || 0),
+
+          total_amount:
+            grandTotal,
+
+          valid_until:
+            form.valid_until ||
+            null,
+
+          payment_terms:
+            form.payment_terms ||
+            null,
+
+          notes:
+            form.notes || null,
+
+          terms_conditions:
+            form.terms_conditions ||
+            null,
+
+          cgst,
+
+          sgst,
+
+          igst,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          selectedQuotation.id
+        )
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
       }
 
-      if (!form.client) {
-        alert(
-          'Please select a client.'
+      const {
+        error: deleteItemsError,
+      } = await supabase
+        .from('quotation_items')
+        .delete()
+        .eq(
+          'quotation_id',
+          selectedQuotation.id
         );
-        return;
+
+      if (deleteItemsError) {
+        throw deleteItemsError;
       }
 
-      const validItems =
-        items.filter(
-          (item) =>
-            item.description.trim() &&
-            Number(item.quantity) > 0
-        );
-
-      if (validItems.length === 0) {
-        alert(
-          'Please add at least one item.'
-        );
-        return;
-      }
-
-      try {
-        setSaving(true);
-
-        const updated =
-          await pb
-            .collection('quotations')
-            .update<Quotation>(
+      const quotationItems =
+        validItems.map(
+          (item) => ({
+            quotation_id:
               selectedQuotation.id,
-              {
-                client: form.client,
-                quotationDate:
-                  form.quotationDate,
-                validUntil:
-                  form.validUntil || '',
-                projectName:
-                  form.projectName,
-                status:
-                  form.status,
-                subtotal,
-                discount:
-                  Number(discount || 0),
-                tax: gst.totalTax,
-                grandTotal,
-                paymentTerms:
-                  form.paymentTerms,
-                notes: form.notes,
 
-                gstType:
-                  form.gstType,
+            description:
+              item.description.trim(),
 
-                gstRate:
-                  Number(
-                    form.gstRate || 0
-                  ),
+            quantity:
+              Number(
+                item.quantity || 0
+              ),
 
-                cgst: gst.cgst,
-                sgst: gst.sgst,
-                igst: gst.igst,
+            unit:
+              item.unit || 'Nos',
 
-                termsConditions:
-                  form.termsConditions,
-              }
-            );
+            rate:
+              Number(
+                item.rate || 0
+              ),
 
-        const oldItems =
-          await pb
-            .collection(
-              'quotation_items'
-            )
-            .getFullList({
-              filter: `quotation = "${selectedQuotation.id}"`,
-            });
+            tax_rate:
+              Number(
+                form.gst_rate || 0
+              ),
 
-        await Promise.all(
-          oldItems.map(
-            (item: any) =>
-              pb
-                .collection(
-                  'quotation_items'
-                )
-                .delete(item.id)
-          )
+            amount:
+              Number(
+                item.amount || 0
+              ),
+          })
         );
 
-        await Promise.all(
-          validItems.map((item) =>
-            pb
-              .collection(
-                'quotation_items'
-              )
-              .create({
-                quotation:
-                  selectedQuotation.id,
-                description:
-                  item.description,
-                quantity:
-                  Number(
-                    item.quantity || 0
-                  ),
-                unit:
-                  item.unit || '',
-                rate:
-                  Number(
-                    item.rate || 0
-                  ),
-                taxRate:
-                  Number(
-                    item.taxRate || 0
-                  ),
-                amount:
-                  Number(
-                    item.amount || 0
-                  ),
-              })
-          )
+      const {
+        error: itemError,
+      } = await supabase
+        .from('quotation_items')
+        .insert(
+          quotationItems
         );
 
+      if (itemError) {
+        throw itemError;
+      }
+
+      setSelectedQuotation(
+        updated as Quotation
+      );
+
+      setShowEdit(false);
+
+      await loadData();
+
+      await loadQuotationItems(
+        selectedQuotation.id
+      );
+
+      setShowDetails(true);
+
+      alert(
+        'Quotation updated successfully.'
+      );
+    } catch (err: any) {
+      console.error(
+        'Quotation update failed:',
+        err
+      );
+
+      alert(
+        err?.message ||
+          'Failed to update quotation.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateStatus = async (
+    quotation: Quotation,
+    status: string
+  ) => {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('quotations')
+        .update({
+          status,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          quotation.id
+        )
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setQuotations(
+        (previous) =>
+          previous.map(
+            (item) =>
+              item.id ===
+              quotation.id
+                ? (data as Quotation)
+                : item
+          )
+      );
+
+      if (
+        selectedQuotation?.id ===
+        quotation.id
+      ) {
         setSelectedQuotation(
-          updated
+          data as Quotation
         );
-
-        alert(
-          'Quotation updated successfully.'
-        );
-
-        setShowEdit(false);
-
-        await loadData();
-
-        await loadQuotationItems(
-          updated.id
-        );
-
-        setShowDetails(true);
-      } catch (error: any) {
-        console.error(
-          'Quotation update failed:',
-          error
-        );
-
-        alert(
-          error?.message ||
-            'Failed to update quotation.'
-        );
-      } finally {
-        setSaving(false);
       }
-    };
+    } catch (err: any) {
+      console.error(err);
 
-  const deleteQuotation =
-    async () => {
-      if (!selectedQuotation) {
-        return;
-      }
+      alert(
+        err?.message ||
+          'Unable to update quotation status.'
+      );
+    }
+  };
 
-      const confirmed =
-        window.confirm(
-          `Delete quotation ${selectedQuotation.quotationNumber}?`
+  const deleteQuotation = async () => {
+    if (!selectedQuotation) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Delete quotation ${selectedQuotation.quotation_number}?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const {
+        error: itemError,
+      } = await supabase
+        .from('quotation_items')
+        .delete()
+        .eq(
+          'quotation_id',
+          selectedQuotation.id
         );
 
-      if (!confirmed) {
-        return;
+      if (itemError) {
+        throw itemError;
       }
 
-      try {
-        const quotationItems =
-          await pb
-            .collection(
-              'quotation_items'
-            )
-            .getFullList({
-              filter: `quotation = "${selectedQuotation.id}"`,
-            });
-
-        await Promise.all(
-          quotationItems.map(
-            (item: any) =>
-              pb
-                .collection(
-                  'quotation_items'
-                )
-                .delete(item.id)
-          )
-        );
-
-        await pb
-          .collection('quotations')
-          .delete(
+      const { error } =
+        await supabase
+          .from('quotations')
+          .delete()
+          .eq(
+            'id',
             selectedQuotation.id
           );
 
-        setShowDetails(false);
-        setSelectedQuotation(null);
-
-        await loadData();
-
-        alert(
-          'Quotation deleted successfully.'
-        );
-      } catch (error: any) {
-        console.error(
-          'Delete failed:',
-          error
-        );
-
-        alert(
-          error?.message ||
-            'Unable to delete quotation.'
-        );
-      }
-    };
-
-  const printQuotation =
-    () => {
-      if (!selectedQuotation) {
-        return;
+      if (error) {
+        throw error;
       }
 
-      const client =
-        getClient(
-          selectedQuotation.client
-        );
+      setQuotations(
+        (previous) =>
+          previous.filter(
+            (item) =>
+              item.id !==
+              selectedQuotation.id
+          )
+      );
 
-      const quotationSubtotal =
-        Number(
-          selectedQuotation.subtotal ||
-            0
-        );
+      setSelectedQuotation(null);
+      setSelectedItems([]);
+      setShowDetails(false);
 
-      const quotationDiscount =
-        Number(
-          selectedQuotation.discount ||
-            0
-        );
+      alert(
+        'Quotation deleted successfully.'
+      );
+    } catch (err: any) {
+      console.error(err);
 
-      const quotationTax =
-        Number(
-          selectedQuotation.tax ||
-            0
-        );
+      alert(
+        err?.message ||
+          'Unable to delete quotation.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      const quotationGrandTotal =
-        Number(
-          selectedQuotation.grandTotal ||
-            0
-        );
+  const printQuotation = () => {
+    if (!selectedQuotation) {
+      return;
+    }
 
-      const cgst =
-        Number(
-          selectedQuotation.cgst ||
-            0
-        );
+    const lead = getLead(
+      selectedQuotation.lead_id
+    );
 
-      const sgst =
-        Number(
-          selectedQuotation.sgst ||
-            0
-        );
+    const quotationItems =
+      selectedItems;
 
-      const igst =
-        Number(
-          selectedQuotation.igst ||
-            0
-        );
-
-      const html = `
+    const html = `
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-
+<meta charset="UTF-8">
 <title>${escapeHtml(
-        selectedQuotation.quotationNumber
-      )}</title>
+      selectedQuotation.quotation_number
+    )}</title>
 
 <style>
 
@@ -1098,36 +1201,53 @@ body {
   background: white;
 }
 
-.page {
-  width: 100%;
-}
-
 .header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 30px;
   border-bottom: 3px solid #9a641f;
-  padding-bottom: 18px;
+  padding-bottom: 15px;
+}
+
+.brand {
+  width: 270px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .logo {
-  width: 115px;
+  width: 85px;
+  height: 85px;
+  object-fit: contain;
+}
+
+.wordmark {
+  width: 220px;
   height: auto;
+  max-height: 65px;
   object-fit: contain;
 }
 
 .company {
+  flex: 1;
   text-align: right;
 }
 
-.company h1 {
-  margin: 0 0 6px;
-  font-size: 22px;
-  letter-spacing: 1px;
+.company .tagline {
+  font-size: 12px;
+  font-weight: 600;
+  font-style: italic;
+  margin-bottom: 8px;
 }
 
 .company p {
   margin: 3px 0;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .title {
@@ -1137,52 +1257,51 @@ body {
 
 .title h2 {
   margin: 0;
-  font-size: 26px;
+  font-size: 25px;
   letter-spacing: 2px;
 }
 
 .meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 25px;
-  margin-bottom: 25px;
+  gap: 18px;
 }
 
 .box {
   border: 1px solid #ddd;
-  padding: 14px;
+  padding: 12px;
   border-radius: 5px;
 }
 
 .box h3 {
-  margin: 0 0 9px;
+  margin: 0 0 8px;
   color: #9a641f;
   font-size: 13px;
 }
 
 .box p {
   margin: 4px 0;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 15px;
+  margin-top: 20px;
 }
 
 th {
   background: #222;
   color: white;
-  padding: 9px;
-  font-size: 11px;
+  padding: 8px;
+  font-size: 10px;
   text-align: left;
 }
 
 td {
-  border-bottom: 1px solid #ddd;
-  padding: 9px;
-  font-size: 11px;
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-size: 10px;
 }
 
 .right {
@@ -1190,50 +1309,55 @@ td {
 }
 
 .summary {
-  width: 45%;
+  width: 320px;
   margin-left: auto;
   margin-top: 20px;
 }
 
-.summary-row {
+.summary div {
   display: flex;
   justify-content: space-between;
-  padding: 7px 0;
-  font-size: 12px;
+  padding: 6px 0;
+  font-size: 11px;
 }
 
-.grand {
+.total {
   border-top: 2px solid #222;
-  font-size: 16px;
+  font-size: 15px !important;
   font-weight: bold;
-  color: #9a641f;
-  padding-top: 12px;
 }
 
-.terms {
-  margin-top: 30px;
-  border-top: 1px solid #ddd;
-  padding-top: 15px;
+.section {
+  margin-top: 25px;
 }
 
-.terms h3 {
-  color: #9a641f;
+.section h3 {
   font-size: 13px;
+  color: #9a641f;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 5px;
 }
 
-.terms p {
-  white-space: pre-line;
+.section p {
   font-size: 10px;
-  line-height: 1.5;
+  line-height: 1.6;
+  white-space: pre-line;
 }
 
 .footer {
   margin-top: 35px;
-  padding-top: 12px;
   border-top: 1px solid #ddd;
+  padding-top: 10px;
   text-align: center;
   font-size: 9px;
   color: #666;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 </style>
@@ -1241,434 +1365,372 @@ td {
 
 <body>
 
-<div class="page">
-
 <div class="header">
 
-<div>
-<img
-  src="/logo.png"
-  class="logo"
-  onerror="this.style.display='none'"
-/>
-</div>
+  <div class="brand">
 
-<div class="company">
+    <img
+      src="/logo.png"
+      class="logo"
+      alt="SRL Logo"
+    />
 
-<h1>
-${escapeHtml(COMPANY.name)}
-</h1>
+    <img
+      src="/srl-wordmark.png"
+      class="wordmark"
+      alt="SRL INFRA DEVELOPERS"
+    />
 
-<p>
-${escapeHtml(
-  COMPANY.address[0]
-)}<br/>
-${escapeHtml(
-  COMPANY.address[1]
-)}<br/>
-${escapeHtml(
-  COMPANY.address[2]
-)}
-</p>
+  </div>
 
-<p>
-Phone: ${escapeHtml(
-  COMPANY.phone
-)}
-</p>
+  <div class="company">
 
-<p>
-${escapeHtml(
-  COMPANY.website
-)}
-</p>
+    <div class="tagline">
+      ${escapeHtml(
+        COMPANY.tagline
+      )}
+    </div>
 
-</div>
+    <p>
+      ${escapeHtml(
+        COMPANY.address[0]
+      )}
+    </p>
+
+    <p>
+      ${escapeHtml(
+        COMPANY.address[1]
+      )}
+    </p>
+
+    <p>
+      Phone:
+      ${escapeHtml(
+        COMPANY.phone
+      )}
+      /
+      ${escapeHtml(
+        COMPANY.phone2
+      )}
+    </p>
+
+    <p>
+      ${escapeHtml(
+        COMPANY.website
+      )}
+    </p>
+
+  </div>
 
 </div>
 
 <div class="title">
-<h2>QUOTATION</h2>
+  <h2>QUOTATION</h2>
 </div>
 
 <div class="meta">
 
-<div class="box">
+  <div class="box">
 
-<h3>BILL TO</h3>
+    <h3>Quotation Details</h3>
 
-<p>
-<strong>
-${escapeHtml(
-  client?.company ||
-    client?.name ||
-    'Client'
-)}
-</strong>
-</p>
+    <p>
+      <strong>Quotation No:</strong>
+      ${escapeHtml(
+        selectedQuotation.quotation_number
+      )}
+    </p>
 
-${
-  client?.company &&
-  client?.name
-    ? `<p>${escapeHtml(
-        client.name
-      )}</p>`
-    : ''
-}
+    <p>
+      <strong>Date:</strong>
+      ${formatDate(
+        selectedQuotation.created_at
+      )}
+    </p>
 
-${
-  client?.address
-    ? `<p>${escapeHtml(
-        client.address
-      )}</p>`
-    : ''
-}
+    <p>
+      <strong>Valid Until:</strong>
+      ${formatDate(
+        selectedQuotation.valid_until
+      )}
+    </p>
 
-${
-  client?.phone
-    ? `<p>Phone: ${escapeHtml(
-        client.phone
-      )}</p>`
-    : ''
-}
+    <p>
+      <strong>Status:</strong>
+      ${escapeHtml(
+        selectedQuotation.status
+      )}
+    </p>
 
-${
-  client?.email
-    ? `<p>Email: ${escapeHtml(
-        client.email
-      )}</p>`
-    : ''
-}
+  </div>
 
-</div>
+  <div class="box">
 
-<div class="box">
+    <h3>Client Details</h3>
 
-<h3>QUOTATION DETAILS</h3>
+    <p>
+      <strong>Name:</strong>
+      ${escapeHtml(
+        lead?.client_name ||
+          lead?.company_name ||
+          '—'
+      )}
+    </p>
 
-<p>
-<strong>Quotation No:</strong>
-${escapeHtml(
-  selectedQuotation.quotationNumber
-)}
-</p>
+    <p>
+      <strong>Company:</strong>
+      ${escapeHtml(
+        lead?.company_name ||
+          '—'
+      )}
+    </p>
 
-<p>
-<strong>Quotation Date:</strong>
-${escapeHtml(
-  formatDate(
-    selectedQuotation.quotationDate
-  )
-)}
-</p>
+    <p>
+      <strong>Phone:</strong>
+      ${escapeHtml(
+        lead?.phone || '—'
+      )}
+    </p>
 
-<p>
-<strong>Valid Until:</strong>
-${escapeHtml(
-  formatDate(
-    selectedQuotation.validUntil
-  )
-)}
-</p>
+    <p>
+      <strong>Email:</strong>
+      ${escapeHtml(
+        lead?.email || '—'
+      )}
+    </p>
 
-<p>
-<strong>Project:</strong>
-${escapeHtml(
-  selectedQuotation.projectName ||
-    '—'
-)}
-</p>
+    <p>
+      <strong>Project:</strong>
+      ${escapeHtml(
+        lead?.project_type ||
+          '—'
+      )}
+    </p>
 
-<p>
-<strong>Status:</strong>
-${escapeHtml(
-  selectedQuotation.status
-)}
-</p>
-
-</div>
+  </div>
 
 </div>
 
 <table>
 
-<thead>
+  <thead>
 
-<tr>
-<th>#</th>
-<th>Description</th>
-<th>Qty</th>
-<th>Unit</th>
-<th class="right">Rate</th>
-<th class="right">Amount</th>
-</tr>
+    <tr>
+      <th>#</th>
+      <th>Description</th>
+      <th>Qty</th>
+      <th>Unit</th>
+      <th>Rate</th>
+      <th>Amount</th>
+    </tr>
 
-</thead>
+  </thead>
 
-<tbody>
+  <tbody>
 
-${
-  selectedItems.length > 0
-    ? selectedItems
-        .map(
-          (item, index) => `
-<tr>
+    ${quotationItems
+      .map(
+        (item, index) => `
+          <tr>
 
-<td>
-${index + 1}
-</td>
+            <td>
+              ${index + 1}
+            </td>
 
-<td>
-${escapeHtml(
-  item.description
-)}
-</td>
+            <td>
+              ${escapeHtml(
+                item.description
+              )}
+            </td>
 
-<td>
-${escapeHtml(
-  item.quantity
-)}
-</td>
+            <td class="right">
+              ${Number(
+                item.quantity
+              ).toFixed(2)}
+            </td>
 
-<td>
-${escapeHtml(
-  item.unit || '—'
-)}
-</td>
+            <td>
+              ${escapeHtml(
+                item.unit
+              )}
+            </td>
 
-<td class="right">
-${escapeHtml(
-  formatCurrency(item.rate)
-)}
-</td>
+            <td class="right">
+              ${formatCurrency(
+                Number(
+                  item.rate
+                )
+              )}
+            </td>
 
-<td class="right">
-${escapeHtml(
-  formatCurrency(item.amount)
-)}
-</td>
+            <td class="right">
+              ${formatCurrency(
+                Number(
+                  item.amount
+                )
+              )}
+            </td>
 
-</tr>
-`
-        )
-        .join('')
-    : `
-<tr>
-<td colspan="6" style="text-align:center">
-No quotation items
-</td>
-</tr>
-`
-}
+          </tr>
+        `
+      )
+      .join('')}
 
-</tbody>
+  </tbody>
 
 </table>
 
 <div class="summary">
 
-<div class="summary-row">
+  <div>
+    <span>Subtotal</span>
+    <strong>
+      ${formatCurrency(
+        Number(
+          selectedQuotation.subtotal
+        )
+      )}
+    </strong>
+  </div>
 
-<span>
-Subtotal
-</span>
+  <div>
+    <span>Discount</span>
+    <strong>
+      -
+      ${formatCurrency(
+        Number(
+          selectedQuotation.discount_amount
+        )
+      )}
+    </strong>
+  </div>
 
-<strong>
-${escapeHtml(
-  formatCurrency(
-    quotationSubtotal
-  )
-)}
-</strong>
+  ${
+    Number(
+      selectedQuotation.cgst
+    ) > 0
+      ? `
+        <div>
+          <span>CGST</span>
+          <strong>
+            ${formatCurrency(
+              Number(
+                selectedQuotation.cgst
+              )
+            )}
+          </strong>
+        </div>
 
-</div>
+        <div>
+          <span>SGST</span>
+          <strong>
+            ${formatCurrency(
+              Number(
+                selectedQuotation.sgst
+              )
+            )}
+          </strong>
+        </div>
+      `
+      : ''
+  }
 
-<div class="summary-row">
+  ${
+    Number(
+      selectedQuotation.igst
+    ) > 0
+      ? `
+        <div>
+          <span>IGST</span>
+          <strong>
+            ${formatCurrency(
+              Number(
+                selectedQuotation.igst
+              )
+            )}
+          </strong>
+        </div>
+      `
+      : ''
+  }
 
-<span>
-Discount
-</span>
+  <div class="total">
 
-<strong>
-- ${escapeHtml(
-  formatCurrency(
-    quotationDiscount
-  )
-)}
-</strong>
+    <span>
+      Total
+    </span>
 
-</div>
+    <strong>
+      ${formatCurrency(
+        Number(
+          selectedQuotation.total_amount
+        )
+      )}
+    </strong>
 
-${
-  selectedQuotation.gstType ===
-  'CGST_SGST'
-    ? `
-<div class="summary-row">
-<span>
-CGST (${Number(
-  selectedQuotation.gstRate || 0
-) / 2}%)
-</span>
-
-<strong>
-${escapeHtml(
-  formatCurrency(cgst)
-)}
-</strong>
-</div>
-
-<div class="summary-row">
-<span>
-SGST (${Number(
-  selectedQuotation.gstRate || 0
-) / 2}%)
-</span>
-
-<strong>
-${escapeHtml(
-  formatCurrency(sgst)
-)}
-</strong>
-</div>
-`
-    : ''
-}
-
-${
-  selectedQuotation.gstType ===
-  'IGST'
-    ? `
-<div class="summary-row">
-<span>
-IGST (${Number(
-  selectedQuotation.gstRate || 0
-)}%)
-</span>
-
-<strong>
-${escapeHtml(
-  formatCurrency(igst)
-)}
-</strong>
-</div>
-`
-    : ''
-}
-
-${
-  !selectedQuotation.gstType ||
-  selectedQuotation.gstType ===
-    'NONE'
-    ? `
-<div class="summary-row">
-<span>
-Tax / GST
-</span>
-
-<strong>
-${escapeHtml(
-  formatCurrency(
-    quotationTax
-  )
-)}
-</strong>
-
-</div>
-`
-    : ''
-}
-
-<div class="summary-row grand">
-
-<span>
-Grand Total
-</span>
-
-<strong>
-${escapeHtml(
-  formatCurrency(
-    quotationGrandTotal
-  )
-)}
-</strong>
-
-</div>
+  </div>
 
 </div>
 
 ${
-  selectedQuotation.paymentTerms
+  selectedQuotation.payment_terms
     ? `
-<div class="box" style="margin-top:25px">
+      <div class="section">
 
-<h3>
-PAYMENT TERMS
-</h3>
+        <h3>
+          Payment Terms
+        </h3>
 
-<p>
-${escapeHtml(
-  selectedQuotation.paymentTerms
-)}
-</p>
+        <p>
+          ${escapeHtml(
+            selectedQuotation.payment_terms
+          )}
+        </p>
 
-</div>
-`
+      </div>
+    `
     : ''
 }
+
+<div class="section">
+
+  <h3>
+    Terms & Conditions
+  </h3>
+
+  <p>
+    ${escapeHtml(
+      selectedQuotation.terms_conditions ||
+        DEFAULT_TERMS
+    )}
+  </p>
+
+</div>
 
 ${
   selectedQuotation.notes
     ? `
-<div class="box" style="margin-top:15px">
+      <div class="section">
 
-<h3>
-NOTES
-</h3>
+        <h3>
+          Notes
+        </h3>
 
-<p>
-${escapeHtml(
-  selectedQuotation.notes
-)}
-</p>
+        <p>
+          ${escapeHtml(
+            selectedQuotation.notes
+          )}
+        </p>
 
-</div>
-`
-    : ''
-}
-
-${
-  selectedQuotation.termsConditions
-    ? `
-<div class="terms">
-
-<h3>
-TERMS & CONDITIONS
-</h3>
-
-<p>
-${escapeHtml(
-  selectedQuotation.termsConditions
-)}
-</p>
-
-</div>
-`
+      </div>
+    `
     : ''
 }
 
 <div class="footer">
 
-<strong>
-${escapeHtml(
-  COMPANY.name
-)}
-</strong>
-
-<br/>
-
-Thank you for considering SRL INFRA DEVELOPERS.
-
-</div>
+  SRL INFRA DEVELOPERS —
+  Where expectations meet reality
 
 </div>
 
@@ -1684,199 +1746,254 @@ window.onload = function() {
 </html>
 `;
 
-      const printWindow =
-        window.open(
-          '',
-          '_blank',
-          'width=900,height=1100'
-        );
-
-      if (!printWindow) {
-        alert(
-          'Please allow pop-ups in your browser to print the quotation.'
-        );
-
-        return;
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(
-        html
+    const printWindow =
+      window.open(
+        '',
+        '_blank',
+        'width=900,height=700'
       );
-      printWindow.document.close();
-    };
+
+    if (!printWindow) {
+      alert(
+        'Please allow pop-ups to print the quotation.'
+      );
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleCreateInvoice = () => {
+    if (!selectedQuotation) {
+      return;
+    }
+
+    if (
+      selectedQuotation.status !==
+      'APPROVED'
+    ) {
+      alert(
+        'Only APPROVED quotations can be converted into an invoice.'
+      );
+      return;
+    }
+
+    navigate(
+      `/portal/invoices?quotation=${selectedQuotation.id}`
+    );
+  };
+
+  const stats = {
+    total: quotations.length,
+
+    draft: quotations.filter(
+      (item) =>
+        item.status === 'DRAFT'
+    ).length,
+
+    sent: quotations.filter(
+      (item) =>
+        item.status === 'SENT'
+    ).length,
+
+    approved: quotations.filter(
+      (item) =>
+        item.status === 'APPROVED'
+    ).length,
+
+    totalValue:
+      quotations.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.total_amount || 0
+          ),
+        0
+      ),
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+
+        <div className="text-center">
+
+          <div className="w-10 h-10 border-4 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-4" />
+
+          <p className="text-gray-600">
+            Loading quotations...
+          </p>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full">
+
+          <h2 className="text-xl font-bold text-red-600 mb-3">
+            Quotation Access Error
+          </h2>
+
+          <p className="text-gray-700 mb-6">
+            {error}
+          </p>
+
+          <button
+            onClick={() =>
+              navigate('/portal')
+            }
+            className="px-5 py-3 bg-black text-white rounded-lg"
+          >
+            Back to Dashboard
+          </button>
+
+        </div>
+
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
 
       <div className="max-w-7xl mx-auto">
 
-        {/* HEADER */}
-
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
 
           <div>
 
-            <button
-              onClick={() =>
-                navigate('/portal')
-              }
-              className="text-sm text-gray-500 hover:text-[#9a641f] mb-2"
-            >
-              ← Back to Dashboard
-            </button>
-
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Quotations
             </h1>
 
             <p className="text-gray-500 mt-1">
-              Create, manage and track customer quotations.
+              Create, manage and approve client quotations
             </p>
 
           </div>
 
-          <div className="flex gap-3">
-
-            <button
-              onClick={loadData}
-              className="px-5 py-3 rounded-lg border bg-white hover:bg-gray-50"
-            >
-              Refresh
-            </button>
-
-            <button
-              onClick={() => {
-                resetForm();
-                setShowCreate(true);
-              }}
-              className="px-5 py-3 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017]"
-            >
-              + New Quotation
-            </button>
-
-          </div>
+          <button
+            onClick={openCreate}
+            className="px-5 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800"
+          >
+            + Create Quotation
+          </button>
 
         </div>
 
-        {/* STATS */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-7">
+          <div className="bg-white rounded-xl p-5 shadow-sm border">
 
-          <div className="bg-white border rounded-xl p-5">
             <p className="text-sm text-gray-500">
               Total
             </p>
 
-            <p className="text-2xl font-bold mt-2">
+            <p className="text-2xl font-bold mt-1">
               {stats.total}
             </p>
+
           </div>
 
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white rounded-xl p-5 shadow-sm border">
+
             <p className="text-sm text-gray-500">
               Draft
             </p>
 
-            <p className="text-2xl font-bold mt-2">
+            <p className="text-2xl font-bold mt-1">
               {stats.draft}
             </p>
+
           </div>
 
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white rounded-xl p-5 shadow-sm border">
+
             <p className="text-sm text-gray-500">
               Sent
             </p>
 
-            <p className="text-2xl font-bold mt-2">
+            <p className="text-2xl font-bold mt-1">
               {stats.sent}
             </p>
+
           </div>
 
-          <div className="bg-white border rounded-xl p-5">
-            <p className="text-sm text-gray-500">
-              Negotiation
-            </p>
+          <div className="bg-white rounded-xl p-5 shadow-sm border">
 
-            <p className="text-2xl font-bold mt-2">
-              {stats.negotiation}
-            </p>
-          </div>
-
-          <div className="bg-white border rounded-xl p-5">
             <p className="text-sm text-gray-500">
               Approved
             </p>
 
-            <p className="text-2xl font-bold mt-2 text-green-700">
+            <p className="text-2xl font-bold mt-1">
               {stats.approved}
             </p>
+
           </div>
 
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white rounded-xl p-5 shadow-sm border col-span-2 md:col-span-1">
+
             <p className="text-sm text-gray-500">
               Total Value
             </p>
 
-            <p className="text-lg font-bold mt-2">
+            <p className="text-lg font-bold mt-1">
               {formatCurrency(
-                stats.value
+                stats.totalValue
               )}
             </p>
+
           </div>
 
         </div>
 
-        {/* FILTERS */}
+        <div className="bg-white rounded-xl border shadow-sm p-4 mb-5">
 
-        <div className="bg-white border rounded-xl p-4 mb-6">
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
 
             <input
               value={search}
-              onChange={(event) =>
+              onChange={(e) =>
                 setSearch(
-                  event.target.value
+                  e.target.value
                 )
               }
-              placeholder="Search quotation, client or project..."
-              className="border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#c5832b]"
+              placeholder="Search quotation, client, company, phone..."
+              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-gray-300"
             />
 
             <select
               value={statusFilter}
-              onChange={(event) =>
+              onChange={(e) =>
                 setStatusFilter(
-                  event.target.value
+                  e.target.value
                 )
               }
-              className="border rounded-lg px-4 py-3"
+              className="w-full border rounded-lg px-4 py-3"
             >
 
               <option value="ALL">
-                All Status
+                All Statuses
               </option>
 
-              <option value="DRAFT">
-                Draft
-              </option>
-
-              <option value="SENT">
-                Sent
-              </option>
-
-              <option value="NEGOTIATION">
-                Negotiation
-              </option>
-
-              <option value="APPROVED">
-                Approved
-              </option>
-
-              <option value="REJECTED">
-                Rejected
-              </option>
+              {statusOptions.map(
+                (status) => (
+                  <option
+                    key={status}
+                    value={status}
+                  >
+                    {status}
+                  </option>
+                )
+              )}
 
             </select>
 
@@ -1884,80 +2001,75 @@ window.onload = function() {
 
         </div>
 
-        {/* TABLE */}
+        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
 
-        <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
 
-          {loading ? (
+            <table className="w-full min-w-[950px]">
 
-            <div className="p-12 text-center text-gray-500">
-              Loading quotations...
-            </div>
+              <thead>
 
-          ) : filteredQuotations.length === 0 ? (
+                <tr className="bg-gray-900 text-white text-sm">
 
-            <div className="p-12 text-center">
+                  <th className="text-left px-5 py-4">
+                    Quotation
+                  </th>
 
-              <div className="text-4xl mb-3">
-                📄
-              </div>
+                  <th className="text-left px-5 py-4">
+                    Client
+                  </th>
 
-              <h3 className="font-semibold text-lg">
-                No quotations found
-              </h3>
+                  <th className="text-left px-5 py-4">
+                    Project
+                  </th>
 
-              <p className="text-gray-500 mt-1">
-                Create your first quotation.
-              </p>
+                  <th className="text-left px-5 py-4">
+                    Date
+                  </th>
 
-            </div>
+                  <th className="text-right px-5 py-4">
+                    Amount
+                  </th>
 
-          ) : (
+                  <th className="text-left px-5 py-4">
+                    Status
+                  </th>
 
-            <div className="overflow-x-auto">
+                  <th className="text-right px-5 py-4">
+                    Action
+                  </th>
 
-              <table className="w-full">
+                </tr>
 
-                <thead className="bg-gray-900 text-white">
+              </thead>
+
+              <tbody>
+
+                {filteredQuotations.length ===
+                0 ? (
 
                   <tr>
 
-                    <th className="text-left px-5 py-4">
-                      Quotation
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Client
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Date
-                    </th>
-
-                    <th className="text-left px-5 py-4">
-                      Status
-                    </th>
-
-                    <th className="text-right px-5 py-4">
-                      Total
-                    </th>
+                    <td
+                      colSpan={7}
+                      className="text-center py-12 text-gray-500"
+                    >
+                      No quotations found.
+                    </td>
 
                   </tr>
 
-                </thead>
+                ) : (
 
-                <tbody>
-
-                  {filteredQuotations.map(
+                  filteredQuotations.map(
                     (quotation) => {
 
-                      const client =
-                        getClient(
-                          quotation.client
+                      const lead =
+                        getLead(
+                          quotation.lead_id
                         );
 
                       return (
-
                         <tr
                           key={
                             quotation.id
@@ -1968,196 +2080,791 @@ window.onload = function() {
                           <td className="px-5 py-4">
 
                             <button
-                              onClick={() => {
-                                setSelectedQuotation(
+                              onClick={() =>
+                                openQuotation(
                                   quotation
-                                );
-
-                                setShowDetails(
-                                  true
-                                );
-
-                                loadQuotationItems(
-                                  quotation.id
-                                );
-                              }}
-                              className="font-semibold text-[#9a641f] hover:underline"
+                                )
+                              }
+                              className="font-semibold text-gray-900 hover:underline"
                             >
                               {
-                                quotation.quotationNumber
+                                quotation.quotation_number
                               }
                             </button>
-
-                            {quotation.projectName && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {
-                                  quotation.projectName
-                                }
-                              </p>
-                            )}
 
                           </td>
 
                           <td className="px-5 py-4">
 
                             <p className="font-medium">
-                              {
-                                client?.company ||
-                                client?.name ||
-                                '—'
-                              }
+                              {lead?.client_name ||
+                                lead?.company_name ||
+                                'Unknown'}
                             </p>
 
-                            {client?.phone && (
+                            {lead?.phone && (
                               <p className="text-xs text-gray-500">
                                 {
-                                  client.phone
+                                  lead.phone
                                 }
                               </p>
                             )}
 
                           </td>
 
-                          <td className="px-5 py-4 text-sm">
-                            {formatDate(
-                              quotation.quotationDate
-                            )}
-                          </td>
-
                           <td className="px-5 py-4">
 
-                            <span
-                              className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                                quotation.status ===
-                                'APPROVED'
-                                  ? 'bg-green-100 text-green-700'
-                                  : quotation.status ===
-                                    'REJECTED'
-                                  ? 'bg-red-100 text-red-700'
-                                  : quotation.status ===
-                                    'NEGOTIATION'
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : quotation.status ===
-                                    'SENT'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
+                            <span className="text-sm">
                               {
-                                quotation.status
+                                lead?.project_type ||
+                                '—'
                               }
                             </span>
 
                           </td>
 
-                          <td className="px-5 py-4 text-right font-bold">
-                            {formatCurrency(
-                              quotation.grandTotal
+                          <td className="px-5 py-4 text-sm">
+                            {formatDate(
+                              quotation.created_at
                             )}
                           </td>
 
-                        </tr>
+                          <td className="px-5 py-4 text-right font-semibold">
+                            {formatCurrency(
+                              Number(
+                                quotation.total_amount
+                              )
+                            )}
+                          </td>
 
+                          <td className="px-5 py-4">
+
+                            <select
+                              value={
+                                quotation.status
+                              }
+                              onChange={(e) =>
+                                updateStatus(
+                                  quotation,
+                                  e.target.value
+                                )
+                              }
+                              className="border rounded-lg px-3 py-2 text-sm"
+                            >
+
+                              {statusOptions.map(
+                                (status) => (
+                                  <option
+                                    key={
+                                      status
+                                    }
+                                    value={
+                                      status
+                                    }
+                                  >
+                                    {status}
+                                  </option>
+                                )
+                              )}
+
+                            </select>
+
+                          </td>
+
+                          <td className="px-5 py-4">
+
+                            <div className="flex justify-end gap-2">
+
+                              <button
+                                onClick={() =>
+                                  openQuotation(
+                                    quotation
+                                  )
+                                }
+                                className="px-3 py-2 border rounded-lg text-sm"
+                              >
+                                View
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  openEdit(
+                                    quotation
+                                  )
+                                }
+                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm"
+                              >
+                                Edit
+                              </button>
+
+                            </div>
+
+                          </td>
+
+                        </tr>
                       );
                     }
-                  )}
+                  )
 
-                </tbody>
+                )}
 
-              </table>
+              </tbody>
 
-            </div>
+            </table>
 
-          )}
+          </div>
 
         </div>
 
       </div>
 
-      {/* CREATE / EDIT MODAL */}
+      {showCreate && (
 
-      {(showCreate || showEdit) && (
+        <div className="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
 
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl my-6">
 
-          <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[94vh] overflow-y-auto">
-
-            <div className="p-6 border-b flex items-center justify-between">
+            <div className="p-6 border-b flex justify-between items-center">
 
               <div>
 
-                <h2 className="text-2xl font-bold">
-                  {showEdit
-                    ? 'Edit Quotation'
-                    : 'New Quotation'}
+                <h2 className="text-xl font-bold">
+                  Create Quotation
                 </h2>
 
-                <p className="text-sm text-gray-500 mt-1">
-                  Prepare a professional quotation for your client.
+                <p className="text-sm text-gray-500">
+                  Create quotation from an existing lead
                 </p>
 
               </div>
 
               <button
-                onClick={() => {
-                  setShowCreate(false);
-                  setShowEdit(false);
-                }}
-                className="text-2xl text-gray-500 hover:text-black"
+                onClick={() =>
+                  setShowCreate(false)
+                }
+                className="text-2xl text-gray-500"
               >
                 ×
               </button>
 
             </div>
 
-            <div className="p-6 space-y-7">
+            <div className="p-6">
 
-              {/* BASIC DETAILS */}
+              <div className="grid md:grid-cols-2 gap-4">
 
-              <div>
+                <div>
 
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  Basic Details
-                </h3>
+                  <label className="block text-sm font-medium mb-2">
+                    Select Lead *
+                  </label>
+
+                  <select
+                    value={form.lead_id}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        lead_id:
+                          e.target.value,
+                      })
+                    }
+                    className="w-full border rounded-lg px-4 py-3"
+                  >
+
+                    <option value="">
+                      Select Lead
+                    </option>
+
+                    {leads.map(
+                      (lead) => (
+                        <option
+                          key={lead.id}
+                          value={lead.id}
+                        >
+                          #{lead.id} —{' '}
+                          {lead.client_name ||
+                            lead.company_name ||
+                            'Unknown'}
+                          {lead.project_type
+                            ? ` — ${lead.project_type}`
+                            : ''}
+                        </option>
+                      )
+                    )}
+
+                  </select>
+
+                </div>
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    Valid Until
+                  </label>
+
+                  <input
+                    type="date"
+                    value={
+                      form.valid_until
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        valid_until:
+                          e.target.value,
+                      })
+                    }
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
+
+                </div>
+
+              </div>
+
+              <div className="mt-6">
+
+                <div className="flex justify-between items-center mb-3">
+
+                  <h3 className="font-semibold">
+                    Quotation Items
+                  </h3>
+
+                  <button
+                    onClick={addItem}
+                    className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm"
+                  >
+                    + Add Item
+                  </button>
+
+                </div>
+
+                <div className="overflow-x-auto border rounded-xl">
+
+                  <table className="w-full min-w-[800px]">
+
+                    <thead>
+
+                      <tr className="bg-gray-100 text-sm">
+
+                        <th className="text-left px-3 py-3">
+                          Description
+                        </th>
+
+                        <th className="px-3 py-3">
+                          Qty
+                        </th>
+
+                        <th className="px-3 py-3">
+                          Unit
+                        </th>
+
+                        <th className="px-3 py-3">
+                          Rate
+                        </th>
+
+                        <th className="text-right px-3 py-3">
+                          Amount
+                        </th>
+
+                        <th className="px-3 py-3">
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {items.map(
+                        (item, index) => (
+
+                          <tr
+                            key={index}
+                            className="border-t"
+                          >
+
+                            <td className="px-3 py-3">
+
+                              <input
+                                value={
+                                  item.description
+                                }
+                                onChange={(e) =>
+                                  updateItem(
+                                    index,
+                                    'description',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Product / Service"
+                                className="w-full border rounded-lg px-3 py-2"
+                              />
+
+                            </td>
+
+                            <td className="px-3 py-3">
+
+                              <input
+                                type="number"
+                                min="0"
+                                value={
+                                  item.quantity
+                                }
+                                onChange={(e) =>
+                                  updateItem(
+                                    index,
+                                    'quantity',
+                                    Number(
+                                      e.target.value
+                                    )
+                                  )
+                                }
+                                className="w-24 border rounded-lg px-3 py-2"
+                              />
+
+                            </td>
+
+                            <td className="px-3 py-3">
+
+                              <input
+                                value={
+                                  item.unit
+                                }
+                                onChange={(e) =>
+                                  updateItem(
+                                    index,
+                                    'unit',
+                                    e.target.value
+                                  )
+                                }
+                                className="w-24 border rounded-lg px-3 py-2"
+                              />
+
+                            </td>
+
+                            <td className="px-3 py-3">
+
+                              <input
+                                type="number"
+                                min="0"
+                                value={
+                                  item.rate
+                                }
+                                onChange={(e) =>
+                                  updateItem(
+                                    index,
+                                    'rate',
+                                    Number(
+                                      e.target.value
+                                    )
+                                  )
+                                }
+                                className="w-32 border rounded-lg px-3 py-2"
+                              />
+
+                            </td>
+
+                            <td className="px-3 py-3 text-right font-medium">
+                              {formatCurrency(
+                                item.amount
+                              )}
+                            </td>
+
+                            <td className="px-3 py-3">
+
+                              <button
+                                onClick={() =>
+                                  removeItem(
+                                    index
+                                  )
+                                }
+                                className="text-red-600"
+                              >
+                                Remove
+                              </button>
+
+                            </td>
+
+                          </tr>
+
+                        )
+                      )}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mt-6">
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    Payment Terms
+                  </label>
+
+                  <textarea
+                    value={
+                      form.payment_terms
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        payment_terms:
+                          e.target.value,
+                      })
+                    }
+                    rows={3}
+                    className="w-full border rounded-lg px-4 py-3"
+                    placeholder="Example: 50% advance, 50% on completion"
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    Notes
+                  </label>
+
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        notes:
+                          e.target.value,
+                      })
+                    }
+                    rows={3}
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
+
+                </div>
+
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-4 mt-6">
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    GST Type
+                  </label>
+
+                  <select
+                    value={
+                      form.gst_type
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        gst_type:
+                          e.target
+                            .value as FormState['gst_type'],
+                      })
+                    }
+                    className="w-full border rounded-lg px-4 py-3"
+                  >
+
+                    <option value="NONE">
+                      No GST
+                    </option>
+
+                    <option value="CGST_SGST">
+                      CGST + SGST
+                    </option>
+
+                    <option value="IGST">
+                      IGST
+                    </option>
+
+                  </select>
+
+                </div>
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    GST Rate %
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      form.gst_rate
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        gst_rate:
+                          Number(
+                            e.target.value
+                          ),
+                      })
+                    }
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="block text-sm font-medium mb-2">
+                    Discount
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={discount}
+                    onChange={(e) =>
+                      setDiscount(
+                        Number(
+                          e.target.value
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
+
+                </div>
+
+              </div>
+
+              <div className="mt-6 bg-gray-50 rounded-xl p-5">
+
+                <div className="flex justify-between py-2">
+
+                  <span>
+                    Subtotal
+                  </span>
+
+                  <strong>
+                    {formatCurrency(
+                      subtotal
+                    )}
+                  </strong>
+
+                </div>
+
+                <div className="flex justify-between py-2">
+
+                  <span>
+                    Discount
+                  </span>
+
+                  <strong>
+                    -{' '}
+                    {formatCurrency(
+                      discount
+                    )}
+                  </strong>
+
+                </div>
+
+                {cgst > 0 && (
+                  <div className="flex justify-between py-2">
+
+                    <span>
+                      CGST
+                    </span>
+
+                    <strong>
+                      {formatCurrency(
+                        cgst
+                      )}
+                    </strong>
+
+                  </div>
+                )}
+
+                {sgst > 0 && (
+                  <div className="flex justify-between py-2">
+
+                    <span>
+                      SGST
+                    </span>
+
+                    <strong>
+                      {formatCurrency(
+                        sgst
+                      )}
+                    </strong>
+
+                  </div>
+                )}
+
+                {igst > 0 && (
+                  <div className="flex justify-between py-2">
+
+                    <span>
+                      IGST
+                    </span>
+
+                    <strong>
+                      {formatCurrency(
+                        igst
+                      )}
+                    </strong>
+
+                  </div>
+                )}
+
+                <div className="flex justify-between border-t mt-3 pt-3 text-lg">
+
+                  <span className="font-bold">
+                    Grand Total
+                  </span>
+
+                  <strong>
+                    {formatCurrency(
+                      grandTotal
+                    )}
+                  </strong>
+
+                </div>
+
+              </div>
+
+              <div className="mt-6">
+
+                <label className="block text-sm font-medium mb-2">
+                  Terms & Conditions
+                </label>
+
+                <textarea
+                  value={
+                    form.terms_conditions
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      terms_conditions:
+                        e.target.value,
+                    })
+                  }
+                  rows={8}
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+
+                <button
+                  onClick={() =>
+                    setShowCreate(
+                      false
+                    )
+                  }
+                  className="px-5 py-3 border rounded-lg"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={
+                    createQuotation
+                  }
+                  disabled={saving}
+                  className="px-6 py-3 bg-gray-900 text-white rounded-lg disabled:opacity-50"
+                >
+                  {saving
+                    ? 'Creating...'
+                    : 'Create Quotation'}
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {showEdit &&
+        selectedQuotation && (
+
+          <div className="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
+
+            <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl my-6">
+
+              <div className="p-6 border-b flex justify-between items-center">
+
+                <div>
+
+                  <h2 className="text-xl font-bold">
+                    Edit Quotation
+                  </h2>
+
+                  <p className="text-sm text-gray-500">
+                    {
+                      selectedQuotation.quotation_number
+                    }
+                  </p>
+
+                </div>
+
+                <button
+                  onClick={() =>
+                    setShowEdit(false)
+                  }
+                  className="text-2xl text-gray-500"
+                >
+                  ×
+                </button>
+
+              </div>
+
+              <div className="p-6">
 
                 <div className="grid md:grid-cols-2 gap-4">
 
                   <div>
 
-                    <label className="block text-sm font-medium mb-1">
-                      Client
+                    <label className="block text-sm font-medium mb-2">
+                      Lead *
                     </label>
 
                     <select
-                      value={form.client}
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            client:
-                              event.target
-                                .value,
-                          })
-                        )
+                      value={
+                        form.lead_id
+                      }
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          lead_id:
+                            e.target.value,
+                        })
                       }
                       className="w-full border rounded-lg px-4 py-3"
                     >
 
                       <option value="">
-                        Select Client
+                        Select Lead
                       </option>
 
-                      {clients.map(
-                        (client) => (
+                      {leads.map(
+                        (lead) => (
                           <option
-                            key={client.id}
+                            key={
+                              lead.id
+                            }
                             value={
-                              client.id
+                              lead.id
                             }
                           >
-                            {client.company
-                              ? `${client.company} — ${client.name}`
-                              : client.name}
+                            #{lead.id} —{' '}
+                            {lead.client_name ||
+                              lead.company_name ||
+                              'Unknown'}
                           </option>
                         )
                       )}
@@ -2168,76 +2875,21 @@ window.onload = function() {
 
                   <div>
 
-                    <label className="block text-sm font-medium mb-1">
-                      Project Name
-                    </label>
-
-                    <input
-                      value={
-                        form.projectName
-                      }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            projectName:
-                              event.target
-                                .value,
-                          })
-                        )
-                      }
-                      placeholder="Interior / Automation / Infrastructure..."
-                      className="w-full border rounded-lg px-4 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Quotation Date
-                    </label>
-
-                    <input
-                      type="date"
-                      value={
-                        form.quotationDate
-                      }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            quotationDate:
-                              event.target
-                                .value,
-                          })
-                        )
-                      }
-                      className="w-full border rounded-lg px-4 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
+                    <label className="block text-sm font-medium mb-2">
                       Valid Until
                     </label>
 
                     <input
                       type="date"
                       value={
-                        form.validUntil
+                        form.valid_until
                       }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            validUntil:
-                              event.target
-                                .value,
-                          })
-                        )
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          valid_until:
+                            e.target.value,
+                        })
                       }
                       className="w-full border rounded-lg px-4 py-3"
                     />
@@ -2246,216 +2898,217 @@ window.onload = function() {
 
                 </div>
 
-              </div>
+                <div className="mt-6">
 
-              {/* ITEMS */}
+                  <div className="flex justify-between items-center mb-3">
 
-              <div>
+                    <h3 className="font-semibold">
+                      Quotation Items
+                    </h3>
 
-                <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={addItem}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg"
+                    >
+                      + Add Item
+                    </button>
 
-                  <h3 className="font-semibold text-[#9a641f]">
-                    Items / Services
-                  </h3>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={addItem}
-                    className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm"
-                  >
-                    + Add Item
-                  </button>
+                  <div className="overflow-x-auto border rounded-xl">
 
-                </div>
+                    <table className="w-full min-w-[800px]">
 
-                <div className="space-y-3">
+                      <thead>
 
-                  {items.map(
-                    (item, index) => (
+                        <tr className="bg-gray-100">
 
-                      <div
-                        key={index}
-                        className="grid grid-cols-12 gap-2 items-end border rounded-xl p-3"
-                      >
-
-                        <div className="col-span-12 md:col-span-4">
-
-                          <label className="text-xs text-gray-500">
+                          <th className="text-left px-3 py-3">
                             Description
-                          </label>
+                          </th>
 
-                          <input
-                            value={
-                              item.description
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateItem(
-                                index,
-                                'description',
-                                event.target
-                                  .value
-                              )
-                            }
-                            placeholder="Product / Service"
-                            className="w-full border rounded-lg px-3 py-2"
-                          />
+                          <th className="px-3 py-3">
+                            Qty
+                          </th>
 
-                        </div>
-
-                        <div className="col-span-4 md:col-span-2">
-
-                          <label className="text-xs text-gray-500">
-                            Quantity
-                          </label>
-
-                          <input
-                            type="number"
-                            min="0"
-                            value={
-                              item.quantity
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateItem(
-                                index,
-                                'quantity',
-                                Number(
-                                  event.target
-                                    .value
-                                )
-                              )
-                            }
-                            className="w-full border rounded-lg px-3 py-2"
-                          />
-
-                        </div>
-
-                        <div className="col-span-4 md:col-span-2">
-
-                          <label className="text-xs text-gray-500">
+                          <th className="px-3 py-3">
                             Unit
-                          </label>
+                          </th>
 
-                          <input
-                            value={
-                              item.unit ||
-                              ''
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateItem(
-                                index,
-                                'unit',
-                                event.target
-                                  .value
-                              )
-                            }
-                            className="w-full border rounded-lg px-3 py-2"
-                          />
-
-                        </div>
-
-                        <div className="col-span-4 md:col-span-2">
-
-                          <label className="text-xs text-gray-500">
+                          <th className="px-3 py-3">
                             Rate
-                          </label>
+                          </th>
 
-                          <input
-                            type="number"
-                            min="0"
-                            value={
-                              item.rate
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateItem(
-                                index,
-                                'rate',
-                                Number(
-                                  event.target
-                                    .value
-                                )
-                              )
-                            }
-                            className="w-full border rounded-lg px-3 py-2"
-                          />
-
-                        </div>
-
-                        <div className="col-span-10 md:col-span-1">
-
-                          <label className="text-xs text-gray-500">
+                          <th className="px-3 py-3">
                             Amount
-                          </label>
+                          </th>
 
-                          <div className="border rounded-lg px-2 py-2 text-sm font-semibold bg-gray-50">
-                            {formatCurrency(
-                              item.amount
-                            )}
-                          </div>
+                          <th />
 
-                        </div>
+                        </tr>
 
-                        <div className="col-span-2 md:col-span-1">
+                      </thead>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              removeItem(
+                      <tbody>
+
+                        {items.map(
+                          (
+                            item,
+                            index
+                          ) => (
+
+                            <tr
+                              key={
                                 index
-                              )
-                            }
-                            className="w-full px-2 py-2 rounded-lg border text-red-600 hover:bg-red-50"
-                          >
-                            ×
-                          </button>
+                              }
+                              className="border-t"
+                            >
 
-                        </div>
+                              <td className="px-3 py-3">
 
-                      </div>
+                                <input
+                                  value={
+                                    item.description
+                                  }
+                                  onChange={(
+                                    e
+                                  ) =>
+                                    updateItem(
+                                      index,
+                                      'description',
+                                      e.target
+                                        .value
+                                    )
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
 
-                    )
-                  )}
+                              </td>
+
+                              <td className="px-3 py-3">
+
+                                <input
+                                  type="number"
+                                  value={
+                                    item.quantity
+                                  }
+                                  onChange={(
+                                    e
+                                  ) =>
+                                    updateItem(
+                                      index,
+                                      'quantity',
+                                      Number(
+                                        e.target
+                                          .value
+                                      )
+                                    )
+                                  }
+                                  className="w-24 border rounded-lg px-3 py-2"
+                                />
+
+                              </td>
+
+                              <td className="px-3 py-3">
+
+                                <input
+                                  value={
+                                    item.unit
+                                  }
+                                  onChange={(
+                                    e
+                                  ) =>
+                                    updateItem(
+                                      index,
+                                      'unit',
+                                      e.target
+                                        .value
+                                    )
+                                  }
+                                  className="w-24 border rounded-lg px-3 py-2"
+                                />
+
+                              </td>
+
+                              <td className="px-3 py-3">
+
+                                <input
+                                  type="number"
+                                  value={
+                                    item.rate
+                                  }
+                                  onChange={(
+                                    e
+                                  ) =>
+                                    updateItem(
+                                      index,
+                                      'rate',
+                                      Number(
+                                        e.target
+                                          .value
+                                      )
+                                    )
+                                  }
+                                  className="w-32 border rounded-lg px-3 py-2"
+                                />
+
+                              </td>
+
+                              <td className="px-3 py-3 text-right">
+
+                                {formatCurrency(
+                                  item.amount
+                                )}
+
+                              </td>
+
+                              <td className="px-3 py-3">
+
+                                <button
+                                  onClick={() =>
+                                    removeItem(
+                                      index
+                                    )
+                                  }
+                                  className="text-red-600"
+                                >
+                                  Remove
+                                </button>
+
+                              </td>
+
+                            </tr>
+
+                          )
+                        )}
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
 
                 </div>
 
-              </div>
-
-              {/* GST */}
-
-              <div>
-
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  GST / Tax
-                </h3>
-
-                <div className="grid md:grid-cols-3 gap-4">
+                <div className="grid md:grid-cols-3 gap-4 mt-6">
 
                   <div>
 
-                    <label className="block text-sm font-medium mb-1">
+                    <label className="block text-sm font-medium mb-2">
                       GST Type
                     </label>
 
                     <select
                       value={
-                        form.gstType
+                        form.gst_type
                       }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            gstType:
-                              event.target
-                                .value,
-                          })
-                        )
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          gst_type:
+                            e.target
+                              .value as FormState['gst_type'],
+                        })
                       }
                       className="w-full border rounded-lg px-4 py-3"
                     >
@@ -2478,148 +3131,59 @@ window.onload = function() {
 
                   <div>
 
-                    <label className="block text-sm font-medium mb-1">
+                    <label className="block text-sm font-medium mb-2">
                       GST Rate %
                     </label>
 
                     <input
                       type="number"
-                      min="0"
                       value={
-                        form.gstRate
+                        form.gst_rate
                       }
-                      disabled={
-                        form.gstType ===
-                        'NONE'
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          gst_rate:
+                            Number(
+                              e.target
+                                .value
+                            ),
+                        })
                       }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            gstRate:
-                              Number(
-                                event.target
-                                  .value
-                              ),
-                          })
-                        )
-                      }
-                      className="w-full border rounded-lg px-4 py-3 disabled:bg-gray-100"
+                      className="w-full border rounded-lg px-4 py-3"
                     />
 
                   </div>
 
-                  <div className="border rounded-lg p-4 bg-gray-50">
+                  <div>
 
-                    <p className="text-sm text-gray-500">
-                      Taxable Amount
-                    </p>
+                    <label className="block text-sm font-medium mb-2">
+                      Discount
+                    </label>
 
-                    <p className="text-lg font-bold mt-1">
-                      {formatCurrency(
-                        taxableAmount
-                      )}
-                    </p>
-
-                  </div>
-
-                </div>
-
-                <div className="grid md:grid-cols-4 gap-4 mt-4">
-
-                  <div className="border rounded-lg p-4">
-
-                    <p className="text-xs text-gray-500">
-                      CGST
-                    </p>
-
-                    <p className="font-semibold">
-                      {formatCurrency(
-                        gst.cgst
-                      )}
-                    </p>
-
-                  </div>
-
-                  <div className="border rounded-lg p-4">
-
-                    <p className="text-xs text-gray-500">
-                      SGST
-                    </p>
-
-                    <p className="font-semibold">
-                      {formatCurrency(
-                        gst.sgst
-                      )}
-                    </p>
-
-                  </div>
-
-                  <div className="border rounded-lg p-4">
-
-                    <p className="text-xs text-gray-500">
-                      IGST
-                    </p>
-
-                    <p className="font-semibold">
-                      {formatCurrency(
-                        gst.igst
-                      )}
-                    </p>
-
-                  </div>
-
-                  <div className="border rounded-lg p-4">
-
-                    <p className="text-xs text-gray-500">
-                      Total GST
-                    </p>
-
-                    <p className="font-semibold text-[#9a641f]">
-                      {formatCurrency(
-                        gst.totalTax
-                      )}
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* DISCOUNT + TOTAL */}
-
-              <div className="grid md:grid-cols-2 gap-6">
-
-                <div>
-
-                  <h3 className="font-semibold text-[#9a641f] mb-4">
-                    Discount
-                  </h3>
-
-                  <input
-                    type="number"
-                    min="0"
-                    value={
-                      discount
-                    }
-                    onChange={(event) =>
-                      setDiscount(
-                        Number(
-                          event.target
-                            .value
+                    <input
+                      type="number"
+                      value={
+                        discount
+                      }
+                      onChange={(e) =>
+                        setDiscount(
+                          Number(
+                            e.target
+                              .value
+                          )
                         )
-                      )
-                    }
-                    className="w-full border rounded-lg px-4 py-3"
-                    placeholder="Discount amount"
-                  />
+                      }
+                      className="w-full border rounded-lg px-4 py-3"
+                    />
+
+                  </div>
 
                 </div>
 
-                <div className="border rounded-xl p-5 bg-gray-50">
+                <div className="mt-6 bg-gray-50 rounded-xl p-5">
 
-                  <div className="flex justify-between mb-2">
+                  <div className="flex justify-between py-2">
 
                     <span>
                       Subtotal
@@ -2633,7 +3197,7 @@ window.onload = function() {
 
                   </div>
 
-                  <div className="flex justify-between mb-2">
+                  <div className="flex justify-between py-2">
 
                     <span>
                       Discount
@@ -2648,27 +3212,61 @@ window.onload = function() {
 
                   </div>
 
-                  <div className="flex justify-between mb-2">
+                  {cgst > 0 && (
+                    <div className="flex justify-between py-2">
 
-                    <span>
-                      GST
-                    </span>
+                      <span>
+                        CGST
+                      </span>
 
-                    <strong>
-                      {formatCurrency(
-                        gst.totalTax
-                      )}
-                    </strong>
+                      <strong>
+                        {formatCurrency(
+                          cgst
+                        )}
+                      </strong>
 
-                  </div>
+                    </div>
+                  )}
 
-                  <div className="border-t pt-3 flex justify-between text-lg">
+                  {sgst > 0 && (
+                    <div className="flex justify-between py-2">
+
+                      <span>
+                        SGST
+                      </span>
+
+                      <strong>
+                        {formatCurrency(
+                          sgst
+                        )}
+                      </strong>
+
+                    </div>
+                  )}
+
+                  {igst > 0 && (
+                    <div className="flex justify-between py-2">
+
+                      <span>
+                        IGST
+                      </span>
+
+                      <strong>
+                        {formatCurrency(
+                          igst
+                        )}
+                      </strong>
+
+                    </div>
+                  )}
+
+                  <div className="flex justify-between border-t mt-3 pt-3 text-lg">
 
                     <span className="font-bold">
                       Grand Total
                     </span>
 
-                    <strong className="text-[#9a641f]">
+                    <strong>
                       {formatCurrency(
                         grandTotal
                       )}
@@ -2678,131 +3276,97 @@ window.onload = function() {
 
                 </div>
 
-              </div>
+                <div className="mt-6">
 
-              {/* PAYMENT */}
+                  <label className="block text-sm font-medium mb-2">
+                    Payment Terms
+                  </label>
 
-              <div>
-
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  Payment Details
-                </h3>
-
-                <div className="grid md:grid-cols-2 gap-4">
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Payment Terms
-                    </label>
-
-                    <input
-                      value={
-                        form.paymentTerms
-                      }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            paymentTerms:
-                              event.target
-                                .value,
-                          })
-                        )
-                      }
-                      placeholder="Example: 25% advance, balance before delivery"
-                      className="w-full border rounded-lg px-4 py-3"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-sm font-medium mb-1">
-                      Notes
-                    </label>
-
-                    <input
-                      value={
-                        form.notes
-                      }
-                      onChange={(event) =>
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            notes:
-                              event.target
-                                .value,
-                          })
-                        )
-                      }
-                      placeholder="Internal / client notes"
-                      className="w-full border rounded-lg px-4 py-3"
-                    />
-
-                  </div>
+                  <textarea
+                    value={
+                      form.payment_terms
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        payment_terms:
+                          e.target.value,
+                      })
+                    }
+                    rows={3}
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
 
                 </div>
 
-              </div>
+                <div className="mt-6">
 
-              {/* TERMS */}
+                  <label className="block text-sm font-medium mb-2">
+                    Notes
+                  </label>
 
-              <div>
-
-                <h3 className="font-semibold text-[#9a641f] mb-4">
-                  Terms & Conditions
-                </h3>
-
-                <textarea
-                  rows={9}
-                  value={
-                    form.termsConditions
-                  }
-                  onChange={(event) =>
-                    setForm(
-                      (previous) => ({
-                        ...previous,
-                        termsConditions:
-                          event.target
-                            .value,
+                  <textarea
+                    value={
+                      form.notes
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        notes:
+                          e.target.value,
                       })
-                    )
-                  }
-                  className="w-full border rounded-lg px-4 py-3"
-                />
+                    }
+                    rows={3}
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
 
-              </div>
+                </div>
 
-              {/* BUTTONS */}
+                <div className="mt-6">
 
-              <div className="flex justify-end gap-3 border-t pt-5">
+                  <label className="block text-sm font-medium mb-2">
+                    Terms & Conditions
+                  </label>
 
-                <button
-                  onClick={() => {
-                    setShowCreate(false);
-                    setShowEdit(false);
-                  }}
-                  className="px-5 py-3 rounded-lg border"
-                >
-                  Cancel
-                </button>
+                  <textarea
+                    value={
+                      form.terms_conditions
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        terms_conditions:
+                          e.target.value,
+                      })
+                    }
+                    rows={8}
+                    className="w-full border rounded-lg px-4 py-3"
+                  />
 
-                <button
-                  onClick={
-                    showEdit
-                      ? saveEdit
-                      : createQuotation
-                  }
-                  disabled={saving}
-                  className="px-6 py-3 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017] disabled:opacity-50"
-                >
-                  {saving
-                    ? 'Saving...'
-                    : showEdit
-                    ? 'Save Changes'
-                    : 'Create Quotation'}
-                </button>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+
+                  <button
+                    onClick={() =>
+                      setShowEdit(false)
+                    }
+                    className="px-5 py-3 border rounded-lg"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={saveEdit}
+                    disabled={saving}
+                    className="px-6 py-3 bg-gray-900 text-white rounded-lg disabled:opacity-50"
+                  >
+                    {saving
+                      ? 'Saving...'
+                      : 'Save Changes'}
+                  </button>
+
+                </div>
 
               </div>
 
@@ -2810,38 +3374,29 @@ window.onload = function() {
 
           </div>
 
-        </div>
-
-      )}
-
-      {/* DETAILS MODAL */}
+        )}
 
       {showDetails &&
         selectedQuotation && (
 
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4">
 
-            <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
+            <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-2xl my-6">
 
-              <div className="p-6 border-b flex items-start justify-between">
+              <div className="p-6 border-b flex justify-between items-center">
 
                 <div>
 
-                  <p className="text-sm text-gray-500">
-                    Quotation
-                  </p>
-
                   <h2 className="text-2xl font-bold">
                     {
-                      selectedQuotation.quotationNumber
+                      selectedQuotation.quotation_number
                     }
                   </h2>
 
-                  <p className="text-sm text-gray-500 mt-1">
-                    {
-                      selectedQuotation.projectName ||
-                      'General Project'
-                    }
+                  <p className="text-gray-500">
+                    {getLeadName(
+                      selectedQuotation.lead_id
+                    )}
                   </p>
 
                 </div>
@@ -2852,7 +3407,7 @@ window.onload = function() {
                       false
                     )
                   }
-                  className="text-2xl text-gray-500 hover:text-black"
+                  className="text-2xl text-gray-500"
                 >
                   ×
                 </button>
@@ -2861,148 +3416,118 @@ window.onload = function() {
 
               <div className="p-6">
 
-                {/* CLIENT + DETAILS */}
-
                 <div className="grid md:grid-cols-2 gap-5">
 
                   <div className="border rounded-xl p-5">
 
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
-                      Bill To
+                    <h3 className="font-semibold mb-3">
+                      Quotation Details
                     </h3>
 
-                    <p className="font-semibold">
+                    <p className="text-sm mb-2">
+                      <strong>
+                        Quotation:
+                      </strong>{' '}
                       {
-                        getClient(
-                          selectedQuotation.client
-                        )?.company ||
-                        getClient(
-                          selectedQuotation.client
-                        )?.name ||
-                        '—'
+                        selectedQuotation.quotation_number
                       }
                     </p>
 
-                    {getClient(
-                      selectedQuotation.client
-                    )?.company &&
-                      getClient(
-                        selectedQuotation.client
-                      )?.name && (
-                        <p>
-                          {
-                            getClient(
-                              selectedQuotation.client
-                            )?.name
-                          }
-                        </p>
+                    <p className="text-sm mb-2">
+                      <strong>
+                        Date:
+                      </strong>{' '}
+                      {formatDate(
+                        selectedQuotation.created_at
                       )}
+                    </p>
 
-                    {getClient(
-                      selectedQuotation.client
-                    )?.address && (
-                      <p className="text-sm text-gray-600 mt-2">
-                        {
-                          getClient(
-                            selectedQuotation.client
-                          )?.address
-                        }
-                      </p>
-                    )}
+                    <p className="text-sm mb-2">
+                      <strong>
+                        Valid Until:
+                      </strong>{' '}
+                      {formatDate(
+                        selectedQuotation.valid_until
+                      )}
+                    </p>
 
-                    {getClient(
-                      selectedQuotation.client
-                    )?.phone && (
-                      <p className="text-sm mt-2">
-                        Phone:{' '}
-                        {
-                          getClient(
-                            selectedQuotation.client
-                          )?.phone
-                        }
-                      </p>
-                    )}
-
-                    {getClient(
-                      selectedQuotation.client
-                    )?.email && (
-                      <p className="text-sm text-gray-600">
-                        Email:{' '}
-                        {
-                          getClient(
-                            selectedQuotation.client
-                          )?.email
-                        }
-                      </p>
-                    )}
+                    <p className="text-sm">
+                      <strong>
+                        Status:
+                      </strong>{' '}
+                      {
+                        selectedQuotation.status
+                      }
+                    </p>
 
                   </div>
 
                   <div className="border rounded-xl p-5">
 
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
-                      Quotation Details
+                    <h3 className="font-semibold mb-3">
+                      Client
                     </h3>
 
-                    <div className="space-y-2 text-sm">
+                    {(() => {
 
-                      <p>
-                        <strong>
-                          Quotation:
-                        </strong>{' '}
-                        {
-                          selectedQuotation.quotationNumber
-                        }
-                      </p>
+                      const lead =
+                        getLead(
+                          selectedQuotation.lead_id
+                        );
 
-                      <p>
-                        <strong>
-                          Date:
-                        </strong>{' '}
-                        {formatDate(
-                          selectedQuotation.quotationDate
-                        )}
-                      </p>
+                      return (
+                        <>
+                          <p className="text-sm mb-2">
+                            <strong>
+                              Name:
+                            </strong>{' '}
+                            {lead?.client_name ||
+                              '—'}
+                          </p>
 
-                      <p>
-                        <strong>
-                          Valid Until:
-                        </strong>{' '}
-                        {formatDate(
-                          selectedQuotation.validUntil
-                        )}
-                      </p>
+                          <p className="text-sm mb-2">
+                            <strong>
+                              Company:
+                            </strong>{' '}
+                            {lead?.company_name ||
+                              '—'}
+                          </p>
 
-                      <p>
-                        <strong>
-                          Project:
-                        </strong>{' '}
-                        {
-                          selectedQuotation.projectName ||
-                          '—'
-                        }
-                      </p>
+                          <p className="text-sm mb-2">
+                            <strong>
+                              Phone:
+                            </strong>{' '}
+                            {lead?.phone ||
+                              '—'}
+                          </p>
 
-                      <p>
-                        <strong>
-                          Status:
-                        </strong>{' '}
-                        {
-                          selectedQuotation.status
-                        }
-                      </p>
+                          <p className="text-sm mb-2">
+                            <strong>
+                              Email:
+                            </strong>{' '}
+                            {lead?.email ||
+                              '—'}
+                          </p>
 
-                    </div>
+                          <p className="text-sm">
+                            <strong>
+                              Project:
+                            </strong>{' '}
+                            {lead?.project_type ||
+                              '—'}
+                          </p>
+                        </>
+                      );
+
+                    })()}
 
                   </div>
 
                 </div>
 
-                {/* ITEMS */}
-
                 <div className="mt-6 border rounded-xl overflow-hidden">
 
-                  <div className="px-5 py-4 bg-gray-50 border-b font-semibold">
+                  <div className="px-5 py-4 bg-gray-100 font-semibold">
                     Quotation Items
                   </div>
 
@@ -3018,11 +3543,15 @@ window.onload = function() {
                             Description
                           </th>
 
-                          <th className="text-right px-4 py-3">
+                          <th className="px-4 py-3">
                             Qty
                           </th>
 
-                          <th className="text-right px-4 py-3">
+                          <th className="px-4 py-3">
+                            Unit
+                          </th>
+
+                          <th className="px-4 py-3">
                             Rate
                           </th>
 
@@ -3043,7 +3572,7 @@ window.onload = function() {
                               key={
                                 item.id
                               }
-                              className="border-b"
+                              className="border-t"
                             >
 
                               <td className="px-4 py-3">
@@ -3052,25 +3581,31 @@ window.onload = function() {
                                 }
                               </td>
 
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-4 py-3 text-center">
                                 {
                                   item.quantity
-                                }{' '}
+                                }
+                              </td>
+
+                              <td className="px-4 py-3 text-center">
                                 {
-                                  item.unit ||
-                                  ''
+                                  item.unit
                                 }
                               </td>
 
                               <td className="px-4 py-3 text-right">
                                 {formatCurrency(
-                                  item.rate
+                                  Number(
+                                    item.rate
+                                  )
                                 )}
                               </td>
 
-                              <td className="px-4 py-3 text-right font-semibold">
+                              <td className="px-4 py-3 text-right font-medium">
                                 {formatCurrency(
-                                  item.amount
+                                  Number(
+                                    item.amount
+                                  )
                                 )}
                               </td>
 
@@ -3087,301 +3622,209 @@ window.onload = function() {
 
                 </div>
 
-                {/* TOTALS */}
+                <div className="max-w-sm ml-auto mt-6 bg-gray-50 rounded-xl p-5">
 
-                <div className="flex justify-end mt-6">
+                  <div className="flex justify-between py-2">
 
-                  <div className="w-full md:w-96 border rounded-xl p-5 space-y-3">
+                    <span>
+                      Subtotal
+                    </span>
 
-                    <div className="flex justify-between">
-
-                      <span>
-                        Subtotal
-                      </span>
-
-                      <strong>
-                        {formatCurrency(
+                    <strong>
+                      {formatCurrency(
+                        Number(
                           selectedQuotation.subtotal
-                        )}
-                      </strong>
+                        )
+                      )}
+                    </strong>
 
-                    </div>
+                  </div>
 
-                    <div className="flex justify-between">
+                  <div className="flex justify-between py-2">
+
+                    <span>
+                      Discount
+                    </span>
+
+                    <strong>
+                      -{' '}
+                      {formatCurrency(
+                        Number(
+                          selectedQuotation.discount_amount
+                        )
+                      )}
+                    </strong>
+
+                  </div>
+
+                  {Number(
+                    selectedQuotation.cgst
+                  ) > 0 && (
+                    <div className="flex justify-between py-2">
 
                       <span>
-                        Discount
+                        CGST
                       </span>
 
                       <strong>
-                        -{' '}
                         {formatCurrency(
-                          selectedQuotation.discount ||
-                            0
+                          Number(
+                            selectedQuotation.cgst
+                          )
                         )}
                       </strong>
 
                     </div>
+                  )}
 
-                    {selectedQuotation.gstType ===
-                      'CGST_SGST' && (
-                      <>
-                        <div className="flex justify-between text-sm">
+                  {Number(
+                    selectedQuotation.sgst
+                  ) > 0 && (
+                    <div className="flex justify-between py-2">
 
-                          <span>
-                            CGST
-                          </span>
-
-                          <strong>
-                            {formatCurrency(
-                              selectedQuotation.cgst ||
-                                0
-                            )}
-                          </strong>
-
-                        </div>
-
-                        <div className="flex justify-between text-sm">
-
-                          <span>
-                            SGST
-                          </span>
-
-                          <strong>
-                            {formatCurrency(
-                              selectedQuotation.sgst ||
-                                0
-                            )}
-                          </strong>
-
-                        </div>
-                      </>
-                    )}
-
-                    {selectedQuotation.gstType ===
-                      'IGST' && (
-                      <div className="flex justify-between text-sm">
-
-                        <span>
-                          IGST
-                        </span>
-
-                        <strong>
-                          {formatCurrency(
-                            selectedQuotation.igst ||
-                              0
-                          )}
-                        </strong>
-
-                      </div>
-                    )}
-
-                    {(!selectedQuotation.gstType ||
-                      selectedQuotation.gstType ===
-                        'NONE') && (
-                      <div className="flex justify-between text-sm">
-
-                        <span>
-                          Tax / GST
-                        </span>
-
-                        <strong>
-                          {formatCurrency(
-                            selectedQuotation.tax ||
-                              0
-                          )}
-                        </strong>
-
-                      </div>
-                    )}
-
-                    <div className="border-t pt-3 flex justify-between text-lg">
-
-                      <span className="font-bold">
-                        Grand Total
+                      <span>
+                        SGST
                       </span>
 
-                      <strong className="text-[#9a641f]">
+                      <strong>
                         {formatCurrency(
-                          selectedQuotation.grandTotal
+                          Number(
+                            selectedQuotation.sgst
+                          )
                         )}
                       </strong>
 
                     </div>
+                  )}
+
+                  {Number(
+                    selectedQuotation.igst
+                  ) > 0 && (
+                    <div className="flex justify-between py-2">
+
+                      <span>
+                        IGST
+                      </span>
+
+                      <strong>
+                        {formatCurrency(
+                          Number(
+                            selectedQuotation.igst
+                          )
+                        )}
+                      </strong>
+
+                    </div>
+                  )}
+
+                  <div className="flex justify-between border-t mt-3 pt-3 text-xl font-bold">
+
+                    <span>
+                      Total
+                    </span>
+
+                    <span>
+                      {formatCurrency(
+                        Number(
+                          selectedQuotation.total_amount
+                        )
+                      )}
+                    </span>
 
                   </div>
 
                 </div>
 
-                {/* PAYMENT + NOTES */}
+                {selectedQuotation.payment_terms && (
+                  <div className="mt-6">
 
-                <div className="grid md:grid-cols-2 gap-5 mt-6">
-
-                  <div className="border rounded-xl p-5">
-
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
+                    <h3 className="font-semibold mb-2">
                       Payment Terms
                     </h3>
 
-                    <p className="text-sm whitespace-pre-line">
+                    <p className="text-sm text-gray-600 whitespace-pre-line">
                       {
-                        selectedQuotation.paymentTerms ||
-                        '—'
+                        selectedQuotation.payment_terms
                       }
                     </p>
 
                   </div>
+                )}
 
-                  <div className="border rounded-xl p-5">
+                {selectedQuotation.terms_conditions && (
+                  <div className="mt-6">
 
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
+                    <h3 className="font-semibold mb-2">
+                      Terms & Conditions
+                    </h3>
+
+                    <p className="text-sm text-gray-600 whitespace-pre-line">
+                      {
+                        selectedQuotation.terms_conditions
+                      }
+                    </p>
+
+                  </div>
+                )}
+
+                {selectedQuotation.notes && (
+                  <div className="mt-6">
+
+                    <h3 className="font-semibold mb-2">
                       Notes
                     </h3>
 
-                    <p className="text-sm whitespace-pre-line">
+                    <p className="text-sm text-gray-600 whitespace-pre-line">
                       {
-                        selectedQuotation.notes ||
-                        '—'
+                        selectedQuotation.notes
                       }
                     </p>
 
                   </div>
+                )}
 
-                </div>
-
-                {/* TERMS */}
-
-                <div className="border rounded-xl p-5 mt-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-3">
-                    Terms & Conditions
-                  </h3>
-
-                  <p className="text-sm whitespace-pre-line leading-6">
-                    {
-                      selectedQuotation.termsConditions ||
-                      DEFAULT_TERMS
-                    }
-                  </p>
-
-                </div>
-
-                {/* WORKFLOW */}
-
-                <div className="mt-6 border rounded-xl p-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-4">
-                    Quotation Workflow
-                  </h3>
-
-                  <div className="flex flex-wrap gap-3">
-
-                    {selectedQuotation.status ===
-                      'DRAFT' && (
-
-                      <button
-                        onClick={() =>
-                          updateStatus(
-                            selectedQuotation,
-                            'SENT'
-                          )
-                        }
-                        className="px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        Mark as Sent
-                      </button>
-
-                    )}
-
-                    {selectedQuotation.status ===
-                      'SENT' && (
-                      <button
-                        onClick={() =>
-                          updateStatus(
-                            selectedQuotation,
-                            'NEGOTIATION'
-                          )
-                        }
-                        className="px-5 py-2.5 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700"
-                      >
-                        Move to Negotiation
-                      </button>
-                    )}
-
-                    {(selectedQuotation.status ===
-                      'SENT' ||
-                      selectedQuotation.status ===
-                        'NEGOTIATION') && (
-                      <>
-                        <button
-                          onClick={() =>
-                            updateStatus(
-                              selectedQuotation,
-                              'APPROVED'
-                            )
-                          }
-                          className="px-5 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700"
-                        >
-                          Approve
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            updateStatus(
-                              selectedQuotation,
-                              'REJECTED'
-                            )
-                          }
-                          className="px-5 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                        >
-                          Reject
-                        </button>
-                      </>
-                    )}
-
-                    {selectedQuotation.status ===
-                      'APPROVED' && (
-
-                      <button
-                        onClick={
-                          handleCreateInvoice
-                        }
-                        className="px-5 py-2.5 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017]"
-                      >
-                        Create Invoice
-                      </button>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-                {/* ACTIONS */}
-
-                <div className="mt-6 flex flex-wrap gap-3">
+                <div className="flex flex-wrap justify-end gap-3 mt-8">
 
                   <button
                     onClick={
                       printQuotation
                     }
-                    className="px-5 py-3 rounded-lg bg-gray-900 text-white hover:bg-black"
+                    className="px-5 py-3 border rounded-lg"
                   >
                     Print / PDF
                   </button>
 
                   <button
-                    onClick={startEdit}
-                    className="px-5 py-3 rounded-lg border hover:bg-gray-50"
+                    onClick={() =>
+                      openEdit(
+                        selectedQuotation
+                      )
+                    }
+                    className="px-5 py-3 bg-gray-900 text-white rounded-lg"
                   >
                     Edit
                   </button>
+
+                  {selectedQuotation.status ===
+                    'APPROVED' && (
+
+                    <button
+                      onClick={
+                        handleCreateInvoice
+                      }
+                      className="px-5 py-3 bg-green-600 text-white rounded-lg"
+                    >
+                      Create Invoice
+                    </button>
+
+                  )}
 
                   <button
                     onClick={
                       deleteQuotation
                     }
-                    className="px-5 py-3 rounded-lg border border-red-300 text-red-600 hover:bg-red-50"
+                    disabled={saving}
+                    className="px-5 py-3 bg-red-600 text-white rounded-lg disabled:opacity-50"
                   >
                     Delete
                   </button>

@@ -6,110 +6,112 @@ import React, {
   useState,
 } from 'react';
 
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { pb } from '../../lib/pocketbase';
+import {
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom';
 
-/* =========================================================
-   TYPES
-========================================================= */
+import { supabase } from '../../lib/supabase';
 
-type Client = {
+type Staff = {
   id: string;
-  clientCode?: string;
+  user_id: string | null;
+  staff_code: string;
+  full_name: string;
+  email: string;
+  role: string;
+  department: string | null;
+  is_active: boolean;
+};
+
+type Lead = {
+  id: number;
   name: string;
-  phone?: string;
-  email?: string;
-  company?: string;
-  address?: string;
-  clientType?: string;
+  phone: string;
+  email: string;
+  company: string | null;
+  project_type: string | null;
+  message: string | null;
 };
 
 type Quotation = {
-  id: string;
-  quotationNumber: string;
-  client: string;
-  quotationDate: string;
-  validUntil?: string;
-  projectName?: string;
+  id: number;
+  lead_id: number;
+  quotation_number: string;
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
   status: string;
-
-  subTotal: number;
-  discount?: number;
-  tax?: number;
-  grandTotal: number;
-
-  paymentTerms?: string;
-  notes?: string;
-
-  gstType?: string;
-  gstRate?: number;
-  cgst?: number;
-  sgst?: number;
-  igst?: number;
-
-  termsConditions?: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+  valid_until: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  terms_conditions: string | null;
+  cgst: number | null;
+  sgst: number | null;
+  igst: number | null;
 };
 
-type Invoice = {
-  id: string;
-  invoiceNumber: string;
-  client: string;
-  quotation?: string;
-
-  invoiceDate: string;
-  dueDate?: string;
-
-  projectName?: string;
-
-  status: string;
-
-  subTotal: number;
-  discount?: number;
-  tax?: number;
-  grandTotal: number;
-
-  paidAmount?: number;
-  paymentStatus: string;
-
-  paymentTerms?: string;
-  notes?: string;
-
-  created: string;
-};
-
-type InvoiceItem = {
-  id?: string;
-  invoice: string;
-
+type QuotationItem = {
+  id: number;
+  quotation_id: number;
   description: string;
   quantity: number;
-  unit?: string;
+  unit: string | null;
   rate: number;
-  taxRate?: number;
+  tax_rate: number | null;
   amount: number;
 };
 
-/* =========================================================
-   COMPANY DETAILS
-========================================================= */
+type Invoice = {
+  id: number;
+  quotation_id: number | null;
+  lead_id: number | null;
+  invoice_number: string;
+  subtotal: number;
+  tax_amount: number;
+  total_amount: number;
+  status: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  terms_conditions: string | null;
+  paid_amount: number | null;
+  payment_status: string;
+  cgst: number | null;
+  sgst: number | null;
+  igst: number | null;
+};
+
+type InvoiceItem = {
+  id: number;
+  invoice_id: number;
+  description: string;
+  quantity: number;
+  unit: string | null;
+  rate: number;
+  tax_rate: number | null;
+  amount: number;
+};
 
 const COMPANY = {
   name: 'SRL INFRA DEVELOPERS',
-
   address: [
     'H.NO: 3, 7-809, D-Mart Road,',
     'Near SRR Signal, Vivekananda Puri,',
     'Karimnagar, Telangana – 505001',
   ],
-
   phone: '7416964666',
-
+  phone2: '8783546061',
   website: 'www.srlinfra.in',
 };
-
-/* =========================================================
-   HELPERS
-========================================================= */
 
 const formatCurrency = (value: number = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -118,7 +120,7 @@ const formatCurrency = (value: number = 0) =>
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
 
-const formatDate = (value?: string) => {
+const formatDate = (value?: string | null) => {
   if (!value) return '—';
 
   const date = new Date(value);
@@ -137,6 +139,15 @@ const formatDate = (value?: string) => {
 const todayISO = () =>
   new Date().toISOString().slice(0, 10);
 
+const addDays = (
+  dateString: string,
+  days: number
+) => {
+  const date = new Date(dateString);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -145,92 +156,16 @@ const escapeHtml = (value: unknown) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
-/* =========================================================
-   POCKETBASE ERROR HELPER
-========================================================= */
+const getErrorMessage = (error: any) => {
+  console.error('Supabase error:', error);
 
-const getPocketBaseErrorMessage = (
-  error: any
-) => {
-  console.error(
-    'POCKETBASE ERROR:',
-    error
+  return (
+    error?.message ||
+    error?.details ||
+    error?.hint ||
+    'Unknown database error.'
   );
-
-  console.error(
-    'ORIGINAL ERROR:',
-    error?.originalError
-  );
-
-  console.error(
-    'ERROR DATA:',
-    error?.data
-  );
-
-  console.error(
-    'RESPONSE DATA:',
-    error?.response?.data
-  );
-
-  const data =
-    error?.response?.data ||
-    error?.data ||
-    error?.originalError?.response?.data;
-
-  let validationErrors = '';
-
-  /*
-   * PocketBase sometimes returns:
-   *
-   * {
-   *   fieldName: {
-   *     code: "...",
-   *     message: "..."
-   *   }
-   * }
-   */
-
-  if (
-    data &&
-    typeof data === 'object'
-  ) {
-    validationErrors =
-      Object.entries(data)
-        .map(
-          ([field, details]: [
-            string,
-            any
-          ]) => {
-            if (
-              details &&
-              typeof details ===
-                'object' &&
-              details.message
-            ) {
-              return `${field}: ${details.message}`;
-            }
-
-            return `${field}: ${JSON.stringify(
-              details
-            )}`;
-          }
-        )
-        .join('\n');
-  }
-
-  if (!validationErrors) {
-    validationErrors =
-      error?.message ||
-      error?.originalError?.message ||
-      'Unknown PocketBase error occurred.';
-  }
-
-  return validationErrors;
 };
-
-/* =========================================================
-   MAIN COMPONENT
-========================================================= */
 
 export default function Invoices() {
   const navigate = useNavigate();
@@ -238,38 +173,23 @@ export default function Invoices() {
   const [searchParams] =
     useSearchParams();
 
-  /* =======================================================
-     DATA
-  ======================================================= */
-
   const [invoices, setInvoices] =
     useState<Invoice[]>([]);
-
-  const [clients, setClients] =
-    useState<Client[]>([]);
 
   const [quotations, setQuotations] =
     useState<Quotation[]>([]);
 
-  /* =======================================================
-     SELECTED DATA
-  ======================================================= */
+  const [quotationItems, setQuotationItems] =
+    useState<QuotationItem[]>([]);
 
-  const [selectedInvoice, setSelectedInvoice] =
-    useState<Invoice | null>(null);
-
-  const [selectedItems, setSelectedItems] =
+  const [invoiceItems, setInvoiceItems] =
     useState<InvoiceItem[]>([]);
 
-  const [selectedQuotation, setSelectedQuotation] =
-    useState<Quotation | null>(null);
+  const [leads, setLeads] =
+    useState<Lead[]>([]);
 
-  const [selectedClient, setSelectedClient] =
-    useState<Client | null>(null);
-
-  /* =======================================================
-     UI STATE
-  ======================================================= */
+  const [currentStaff, setCurrentStaff] =
+    useState<Staff | null>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -280,6 +200,18 @@ export default function Invoices() {
   const [showDetails, setShowDetails] =
     useState(false);
 
+  const [selectedInvoice, setSelectedInvoice] =
+    useState<Invoice | null>(null);
+
+  const [selectedQuotation, setSelectedQuotation] =
+    useState<Quotation | null>(null);
+
+  const [selectedLead, setSelectedLead] =
+    useState<Lead | null>(null);
+
+  const [paidAmountInput, setPaidAmountInput] =
+    useState('');
+
   const [search, setSearch] =
     useState('');
 
@@ -289,19 +221,61 @@ export default function Invoices() {
   const [paymentFilter, setPaymentFilter] =
     useState('ALL');
 
-  const [paidAmountInput, setPaidAmountInput] =
-    useState('');
-
-  /*
-   * Prevent duplicate automatic conversion
-   * caused by React StrictMode.
-   */
   const autoConversionStarted =
     useRef(false);
 
-  /* =======================================================
-     LOAD DATA
-  ======================================================= */
+  const isAdmin =
+    currentStaff?.role?.toUpperCase() ===
+    'ADMIN';
+
+  const loadCurrentStaff =
+    useCallback(async () => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!user) {
+        throw new Error(
+          'Please login first.'
+        );
+      }
+
+      const { data, error } =
+        await supabase
+          .from('staff')
+          .select(`
+            id,
+            user_id,
+            staff_code,
+            full_name,
+            email,
+            role,
+            department,
+            is_active
+          `)
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .single();
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        throw new Error(
+          'Active staff record not found for this account.'
+        );
+      }
+
+      setCurrentStaff(data as Staff);
+
+      return data as Staff;
+    }, []);
 
   const loadData = useCallback(
     async () => {
@@ -309,33 +283,94 @@ export default function Invoices() {
         setLoading(true);
 
         const [
+          staff,
           invoiceResult,
-          clientResult,
           quotationResult,
+          quotationItemResult,
+          leadResult,
         ] = await Promise.all([
-          pb
-            .collection('invoices')
-            .getFullList<Invoice>({
-              sort: '-created',
+          loadCurrentStaff(),
+
+          supabase
+            .from('invoices')
+            .select('*')
+            .order('created_at', {
+              ascending: false,
             }),
 
-          pb
-            .collection('clients')
-            .getFullList<Client>({
-              sort: 'name',
+          supabase
+            .from('quotations')
+            .select('*')
+            .order('created_at', {
+              ascending: false,
             }),
 
-          pb
-            .collection('quotations')
-            .getFullList<Quotation>({
-              sort: '-created',
+          supabase
+            .from('quotation_items')
+            .select('*')
+            .order('id', {
+              ascending: true,
+            }),
+
+          supabase
+            .from('leads')
+            .select(`
+              id,
+              name,
+              phone,
+              email,
+              company,
+              project_type,
+              message
+            `)
+            .order('created_at', {
+              ascending: false,
             }),
         ]);
 
-        setInvoices(invoiceResult);
-        setClients(clientResult);
+        if (invoiceResult.error) {
+          throw invoiceResult.error;
+        }
+
+        if (quotationResult.error) {
+          throw quotationResult.error;
+        }
+
+        if (quotationItemResult.error) {
+          throw quotationItemResult.error;
+        }
+
+        if (leadResult.error) {
+          throw leadResult.error;
+        }
+
+        if (
+          staff.role?.toUpperCase() !==
+          'ADMIN'
+        ) {
+          throw new Error(
+            'Only Admin can access invoices.'
+          );
+        }
+
+        setInvoices(
+          (invoiceResult.data ||
+            []) as Invoice[]
+        );
+
         setQuotations(
-          quotationResult
+          (quotationResult.data ||
+            []) as Quotation[]
+        );
+
+        setQuotationItems(
+          (quotationItemResult.data ||
+            []) as QuotationItem[]
+        );
+
+        setLeads(
+          (leadResult.data ||
+            []) as Lead[]
         );
       } catch (error: any) {
         console.error(
@@ -343,109 +378,113 @@ export default function Invoices() {
           error
         );
 
-        const message =
-          getPocketBaseErrorMessage(
-            error
-          );
-
         alert(
-          `Unable to load invoice data.\n\n${message}`
+          `Unable to load invoice data.\n\n${getErrorMessage(
+            error
+          )}`
         );
       } finally {
         setLoading(false);
       }
     },
-    []
+    [loadCurrentStaff]
   );
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  /* =======================================================
-     LOOKUPS
-  ======================================================= */
-
-  const getClient = useCallback(
-    (clientId?: string) =>
-      clients.find(
-        (client) =>
-          client.id === clientId
+  const getLead = useCallback(
+    (leadId?: number | null) =>
+      leads.find(
+        (lead) =>
+          lead.id === leadId
       ),
-    [clients]
+    [leads]
   );
 
   const getQuotation = useCallback(
-    (quotationId?: string) =>
+    (quotationId?: number | null) =>
       quotations.find(
         (quotation) =>
-          quotation.id === quotationId
+          quotation.id ===
+          quotationId
       ),
     [quotations]
   );
 
-  /* =======================================================
-     FILTERED INVOICES
-  ======================================================= */
+  const getQuotationItems =
+    useCallback(
+      (quotationId: number) =>
+        quotationItems.filter(
+          (item) =>
+            item.quotation_id ===
+            quotationId
+        ),
+      [quotationItems]
+    );
 
-  const filteredInvoices = useMemo(
-    () => {
-      const query =
-        search.trim().toLowerCase();
+  const getInvoiceItems =
+    useCallback(
+      (invoiceId: number) =>
+        invoiceItems.filter(
+          (item) =>
+            item.invoice_id ===
+            invoiceId
+        ),
+      [invoiceItems]
+    );
 
-      return invoices.filter(
-        (invoice) => {
-          const client =
-            getClient(
-              invoice.client
-            );
+  const filteredInvoices = useMemo(() => {
+    const query =
+      search.trim().toLowerCase();
 
-          const searchText = [
-            invoice.invoiceNumber,
-            invoice.projectName,
-            client?.name,
-            client?.company,
-            client?.phone,
-            client?.email,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
+    return invoices.filter(
+      (invoice) => {
+        const lead = getLead(
+          invoice.lead_id
+        );
 
-          const matchesSearch =
-            !query ||
-            searchText.includes(query);
+        const searchText = [
+          invoice.invoice_number,
+          lead?.name,
+          lead?.company,
+          lead?.phone,
+          lead?.email,
+          lead?.project_type,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
 
-          const matchesStatus =
-            statusFilter === 'ALL' ||
-            invoice.status ===
-              statusFilter;
+        const matchesSearch =
+          !query ||
+          searchText.includes(query);
 
-          const matchesPayment =
-            paymentFilter === 'ALL' ||
-            invoice.paymentStatus ===
-              paymentFilter;
+        const matchesStatus =
+          statusFilter === 'ALL' ||
+          invoice.status ===
+            statusFilter;
 
-          return (
-            matchesSearch &&
-            matchesStatus &&
-            matchesPayment
-          );
-        }
-      );
-    },
-    [
-      invoices,
-      search,
-      statusFilter,
-      paymentFilter,
-      getClient,
-    ]
-  );
+        const matchesPayment =
+          paymentFilter === 'ALL' ||
+          invoice.payment_status ===
+            paymentFilter;
 
-  /* =======================================================
-     STATISTICS
-  ======================================================= */
+        return (
+          matchesSearch &&
+          matchesStatus &&
+          matchesPayment
+        );
+      }
+    );
+  }, [
+    invoices,
+    search,
+    statusFilter,
+    paymentFilter,
+    getLead,
+  ]);
 
   const stats = useMemo(() => {
     const total =
@@ -456,7 +495,7 @@ export default function Invoices() {
         (sum, invoice) =>
           sum +
           Number(
-            invoice.grandTotal || 0
+            invoice.total_amount || 0
           ),
         0
       );
@@ -466,7 +505,7 @@ export default function Invoices() {
         (sum, invoice) =>
           sum +
           Number(
-            invoice.paidAmount || 0
+            invoice.paid_amount || 0
           ),
         0
       );
@@ -480,8 +519,14 @@ export default function Invoices() {
     const sent =
       invoices.filter(
         (invoice) =>
-          invoice.status ===
-          'SENT'
+          invoice.status === 'SENT'
+      ).length;
+
+    const overdue =
+      invoices.filter(
+        (invoice) =>
+          invoice.payment_status ===
+          'OVERDUE'
       ).length;
 
     return {
@@ -490,12 +535,9 @@ export default function Invoices() {
       paid,
       outstanding,
       sent,
+      overdue,
     };
   }, [invoices]);
-
-  /* =======================================================
-     GENERATE INVOICE NUMBER
-  ======================================================= */
 
   const generateInvoiceNumber =
     useCallback(() => {
@@ -506,7 +548,7 @@ export default function Invoices() {
         invoices
           .map((invoice) => {
             const match =
-              invoice.invoiceNumber?.match(
+              invoice.invoice_number?.match(
                 /INV-\d{4}-(\d+)/
               );
 
@@ -519,104 +561,89 @@ export default function Invoices() {
               !Number.isNaN(number)
           );
 
-      const nextNumber =
-        numbers.length > 0
+      const next =
+        numbers.length
           ? Math.max(...numbers) + 1
           : 1;
 
       return `INV-${year}-${String(
-        nextNumber
+        next
       ).padStart(4, '0')}`;
     }, [invoices]);
 
-  /* =======================================================
-     LOAD INVOICE ITEMS
-  ======================================================= */
+  const loadInvoiceItems = async (
+    invoiceId: number
+  ) => {
+    const { data, error } =
+      await supabase
+        .from('invoice_items')
+        .select('*')
+        .eq('invoice_id', invoiceId)
+        .order('id', {
+          ascending: true,
+        });
 
-  const loadInvoiceItems =
-    async (
-      invoiceId: string
-    ) => {
-      try {
-        const items =
-          await pb
-            .collection(
-              'invoice_items'
-            )
-            .getFullList<InvoiceItem>({
-              filter: `invoice = "${invoiceId}"`,
-              sort: 'created',
-            });
-
-        setSelectedItems(
-          items
-        );
-
-        return items;
-      } catch (error) {
-        console.error(
-          'Failed to load invoice items:',
-          error
-        );
-
-        setSelectedItems([]);
-
-        return [];
-      }
-    };
-
-  /* =======================================================
-     OPEN INVOICE
-  ======================================================= */
-
-  const openInvoice =
-    async (
-      invoice: Invoice
-    ) => {
-      setSelectedInvoice(
-        invoice
+    if (error) {
+      console.error(
+        'Invoice items error:',
+        error
       );
 
-      const client =
-        getClient(
-          invoice.client
-        );
+      setInvoiceItems([]);
 
-      const quotation =
-        getQuotation(
-          invoice.quotation
-        );
+      return [];
+    }
 
-      setSelectedClient(
-        client || null
-      );
+    const items =
+      (data || []) as InvoiceItem[];
 
-      setSelectedQuotation(
-        quotation || null
-      );
+    setInvoiceItems(items);
 
-      setPaidAmountInput(
-        String(
-          invoice.paidAmount || 0
-        )
-      );
+    return items;
+  };
 
-      await loadInvoiceItems(
-        invoice.id
-      );
+  const openInvoice = async (
+    invoice: Invoice
+  ) => {
+    setSelectedInvoice(invoice);
 
-      setShowDetails(true);
-    };
+    setSelectedQuotation(
+      getQuotation(
+        invoice.quotation_id
+      ) || null
+    );
 
-  /* =======================================================
-     CREATE INVOICE FROM QUOTATION
-  ======================================================= */
+    setSelectedLead(
+      getLead(
+        invoice.lead_id
+      ) || null
+    );
+
+    setPaidAmountInput(
+      String(
+        invoice.paid_amount || 0
+      )
+    );
+
+    await loadInvoiceItems(
+      invoice.id
+    );
+
+    setShowDetails(true);
+  };
 
   const createInvoiceFromQuotation =
     useCallback(
       async (
         quotation: Quotation
       ) => {
+        if (!isAdmin) {
+          alert(
+            'Only Admin can create invoices.'
+          );
+          return;
+        }
+
         if (
           quotation.status !==
           'APPROVED'
@@ -624,27 +651,29 @@ export default function Invoices() {
           alert(
             'Only APPROVED quotations can be converted into invoices.'
           );
+          return;
+        }
 
+        if (!currentStaff) {
+          alert(
+            'Admin staff information is missing.'
+          );
           return;
         }
 
         try {
           setCreating(true);
 
-          /* -----------------------------------------------
-             DUPLICATE CHECK
-          ------------------------------------------------ */
-
           const existing =
             invoices.find(
               (invoice) =>
-                invoice.quotation ===
+                invoice.quotation_id ===
                 quotation.id
             );
 
           if (existing) {
             alert(
-              `An invoice already exists for ${quotation.quotationNumber}.\n\nInvoice: ${existing.invoiceNumber}`
+              `Invoice already exists for ${quotation.quotation_number}.\n\nInvoice: ${existing.invoice_number}`
             );
 
             await openInvoice(
@@ -654,236 +683,152 @@ export default function Invoices() {
             return;
           }
 
-          /* -----------------------------------------------
-             INVOICE NUMBER
-          ------------------------------------------------ */
+          const lead =
+            getLead(
+              quotation.lead_id
+            );
+
+          if (!lead) {
+            throw new Error(
+              'Lead linked to this quotation was not found.'
+            );
+          }
 
           const invoiceNumber =
             generateInvoiceNumber();
 
-          /* -----------------------------------------------
-             DUE DATE
-          ------------------------------------------------ */
+          const invoiceDate =
+            todayISO();
 
           const dueDate =
-            new Date();
-
-          dueDate.setDate(
-            dueDate.getDate() +
+            addDays(
+              invoiceDate,
               15
-          );
-
-          /* -----------------------------------------------
-             TAX
-          ------------------------------------------------ */
+            );
 
           const quotationTax =
             Number(
-              quotation.tax || 0
+              quotation.tax_amount || 0
             );
 
-          const gstTax =
+          const cgst =
             Number(
               quotation.cgst || 0
-            ) +
+            );
+
+          const sgst =
             Number(
               quotation.sgst || 0
-            ) +
+            );
+
+          const igst =
             Number(
               quotation.igst || 0
             );
 
           const finalTax =
             quotationTax ||
-            gstTax;
-
-          /* -----------------------------------------------
-             PAYLOAD
-          ------------------------------------------------ */
+            cgst +
+              sgst +
+              igst;
 
           const invoicePayload = {
-            invoiceNumber,
-
-            client:
-              quotation.client,
-
-            quotation:
+            quotation_id:
               quotation.id,
 
-            invoiceDate:
-              todayISO(),
+            lead_id:
+              quotation.lead_id,
 
-            dueDate:
-              dueDate.toISOString(),
+            invoice_number:
+              invoiceNumber,
 
-            projectName:
-              quotation.projectName ||
-              '',
-
-            status: 'DRAFT',
-
-            subTotal:
+            subtotal:
               Number(
-                quotation.subTotal ||
+                quotation.subtotal || 0
+              ),
+
+            tax_amount:
+              finalTax,
+
+            total_amount:
+              Number(
+                quotation.total_amount ||
                   0
               ),
 
-            discount:
-              Number(
-                quotation.discount ||
-                  0
-              ),
+            status:
+              'DRAFT',
 
-            tax: finalTax,
+            created_by:
+              currentStaff.id,
 
-            grandTotal:
-              Number(
-                quotation.grandTotal ||
-                  0
-              ),
+            invoice_date:
+              invoiceDate,
 
-            paidAmount: 0,
+            due_date:
+              dueDate,
 
-            paymentStatus:
-              'UNPAID',
-
-            paymentTerms:
-              quotation.paymentTerms ||
+            payment_terms:
+              quotation.payment_terms ||
               '15 days',
 
             notes:
               quotation.notes ||
-              '',
+              null,
+
+            terms_conditions:
+              quotation.terms_conditions ||
+              null,
+
+            paid_amount: 0,
+
+            payment_status:
+              'UNPAID',
+
+            cgst,
+
+            sgst,
+
+            igst,
           };
 
           console.log(
-            'Creating invoice with payload:',
+            'Creating invoice:',
             invoicePayload
           );
 
-          /* -----------------------------------------------
-             CREATE INVOICE
-          ------------------------------------------------ */
+          const {
+            data: invoice,
+            error: invoiceError,
+          } =
+            await supabase
+              .from('invoices')
+              .insert(
+                invoicePayload
+              )
+              .select('*')
+              .single();
 
-          let invoice: Invoice;
-
-          try {
-            invoice =
-              await pb
-                .collection(
-                  'invoices'
-                )
-                .create<Invoice>(
-                  invoicePayload
-                );
-          } catch (error: any) {
-            console.error(
-              'Invoice creation failed:',
-              error
-            );
-
-            console.error(
-              'Original error:',
-              error?.originalError
-            );
-
-            console.error(
-              'Error data:',
-              error?.data
-            );
-
-            console.error(
-              'Response data:',
-              error?.response?.data
-            );
-
-            const validationErrors =
-              getPocketBaseErrorMessage(
-                error
-              );
-
-            alert(
-              `Failed to create invoice:\n\n${validationErrors}`
-            );
-
-            return;
+          if (invoiceError) {
+            throw invoiceError;
           }
 
-          /* -----------------------------------------------
-             GET QUOTATION ITEMS
-          ------------------------------------------------ */
-
-          let quotationItems:
-            Array<{
-              id: string;
-              quotation: string;
-              description: string;
-              quantity: number;
-              unit?: string;
-              rate: number;
-              taxRate?: number;
-              amount: number;
-            }> = [];
-
-          try {
-            quotationItems =
-              await pb
-                .collection(
-                  'quotation_items'
-                )
-                .getFullList({
-                  filter: `quotation = "${quotation.id}"`,
-                  sort: 'created',
-                });
-          } catch (error: any) {
-            console.error(
-              'Could not load quotation items:',
-              error
+          if (!invoice) {
+            throw new Error(
+              'Invoice was not returned after creation.'
             );
-
-            /*
-             * Roll back invoice.
-             */
-            try {
-              await pb
-                .collection(
-                  'invoices'
-                )
-                .delete(
-                  invoice.id
-                );
-            } catch (
-              rollbackError
-            ) {
-              console.error(
-                'Invoice rollback failed:',
-                rollbackError
-              );
-            }
-
-            alert(
-              `Invoice was not completed because quotation items could not be loaded.\n\n${getPocketBaseErrorMessage(
-                error
-              )}`
-            );
-
-            return;
           }
 
-          /* -----------------------------------------------
-             COPY ITEMS
-          ------------------------------------------------ */
+          const items =
+            getQuotationItems(
+              quotation.id
+            );
 
-          try {
-            for (
-              const item of quotationItems
-            ) {
-              await pb
-                .collection(
-                  'invoice_items'
-                )
-                .create({
-                  invoice:
+          if (items.length > 0) {
+            const invoiceItemPayload =
+              items.map(
+                (item) => ({
+                  invoice_id:
                     invoice.id,
 
                   description:
@@ -891,74 +836,60 @@ export default function Invoices() {
 
                   quantity:
                     Number(
-                      item.quantity ||
-                        0
+                      item.quantity || 0
                     ),
 
                   unit:
-                    item.unit || '',
+                    item.unit || null,
 
                   rate:
                     Number(
                       item.rate || 0
                     ),
 
-                  taxRate:
+                  tax_rate:
                     Number(
-                      item.taxRate ||
-                        0
+                      item.tax_rate || 0
                     ),
 
                   amount:
                     Number(
-                      item.amount ||
-                        0
+                      item.amount || 0
                     ),
-                });
-            }
-          } catch (error: any) {
-            console.error(
-              'Invoice item creation failed:',
-              error
-            );
+                })
+              );
 
-            /*
-             * Delete incomplete invoice.
-             */
-            try {
-              await pb
-                .collection(
-                  'invoices'
-                )
-                .delete(
+            const {
+              error: itemError,
+            } =
+              await supabase
+                .from('invoice_items')
+                .insert(
+                  invoiceItemPayload
+                );
+
+            if (itemError) {
+              await supabase
+                .from('invoices')
+                .delete()
+                .eq(
+                  'id',
                   invoice.id
                 );
-            } catch (
-              rollbackError
-            ) {
-              console.error(
-                'Invoice rollback failed:',
-                rollbackError
+
+              throw new Error(
+                `Invoice was created but invoice items failed: ${itemError.message}`
               );
             }
-
-            alert(
-              `Invoice items could not be created.\n\n${getPocketBaseErrorMessage(
-                error
-              )}\n\nThe incomplete invoice was removed.`
-            );
-
-            return;
           }
-
-          /* -----------------------------------------------
-             REFRESH
-          ------------------------------------------------ */
 
           await loadData();
 
+          const createdInvoice =
+            invoice as Invoice;
+
           await openInvoice(
-            invoice
+            createdInvoice
           );
 
           alert(
@@ -966,12 +897,12 @@ export default function Invoices() {
           );
         } catch (error: any) {
           console.error(
-            'Unexpected invoice creation error:',
+            'Invoice creation failed:',
             error
           );
 
           alert(
-            `Invoice creation failed.\n\n${getPocketBaseErrorMessage(
+            `Invoice creation failed.\n\n${getErrorMessage(
               error
             )}`
           );
@@ -980,19 +911,15 @@ export default function Invoices() {
         }
       },
       [
+        isAdmin,
+        currentStaff,
         invoices,
+        getLead,
         generateInvoiceNumber,
+        getQuotationItems,
         loadData,
-        getClient,
-        getQuotation,
       ]
     );
-
-  /* =======================================================
-     AUTO CONVERT
-     
-     /portal/invoices?quotation=QUOTATION_ID
-  ======================================================= */
 
   useEffect(() => {
     const quotationId =
@@ -1012,7 +939,8 @@ export default function Invoices() {
     const quotation =
       quotations.find(
         (item) =>
-          item.id === quotationId
+          String(item.id) ===
+          quotationId
       );
 
     if (!quotation) {
@@ -1041,272 +969,250 @@ export default function Invoices() {
     navigate,
   ]);
 
-  /* =======================================================
-     UPDATE INVOICE STATUS
-  ======================================================= */
-
   const updateInvoiceStatus =
     async (
       invoice: Invoice,
       status: string
     ) => {
-      try {
-        const updated =
-          await pb
-            .collection(
-              'invoices'
-            )
-            .update<Invoice>(
-              invoice.id,
-              {
-                status,
-              }
-            );
+      if (!isAdmin) return;
 
-        setInvoices(
-          (previous) =>
-            previous.map(
-              (item) =>
-                item.id ===
-                invoice.id
-                  ? updated
-                  : item
-            )
-        );
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('invoices')
+        .update({
+          status,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq('id', invoice.id)
+        .select('*')
+        .single();
 
-        setSelectedInvoice(
-          updated
-        );
-      } catch (error: any) {
-        console.error(
-          'Status update failed:',
-          error
-        );
-
+      if (error) {
         alert(
-          `Unable to update invoice status.\n\n${getPocketBaseErrorMessage(
+          `Unable to update invoice status.\n\n${getErrorMessage(
             error
           )}`
         );
-      }
-    };
-
-  /* =======================================================
-     UPDATE PAYMENT
-  ======================================================= */
-
-  const updatePayment =
-    async () => {
-      if (!selectedInvoice) {
         return;
       }
 
-      const paidAmount =
-        Number(
-          paidAmountInput || 0
-        );
-
-      const grandTotal =
-        Number(
-          selectedInvoice.grandTotal ||
-            0
-        );
-
-      if (
-        Number.isNaN(
-          paidAmount
-        )
-      ) {
-        alert(
-          'Please enter a valid payment amount.'
-        );
-
-        return;
-      }
-
-      if (paidAmount < 0) {
-        alert(
-          'Paid amount cannot be negative.'
-        );
-
-        return;
-      }
-
-      if (
-        paidAmount >
-        grandTotal
-      ) {
-        alert(
-          `Paid amount cannot exceed the invoice total of ${formatCurrency(
-            grandTotal
-          )}.`
-        );
-
-        return;
-      }
-
-      let paymentStatus =
-        'UNPAID';
-
-      if (
-        paidAmount <= 0
-      ) {
-        paymentStatus =
-          'UNPAID';
-      } else if (
-        paidAmount >=
-        grandTotal
-      ) {
-        paymentStatus =
-          'PAID';
-      } else {
-        paymentStatus =
-          'PARTIALLY PAID';
-      }
-
-      try {
-        const updated =
-          await pb
-            .collection(
-              'invoices'
-            )
-            .update<Invoice>(
-              selectedInvoice.id,
-              {
-                paidAmount,
-                paymentStatus,
-              }
-            );
-
-        setInvoices(
-          (previous) =>
-            previous.map(
-              (item) =>
-                item.id ===
-                updated.id
-                  ? updated
-                  : item
-            )
-        );
-
-        setSelectedInvoice(
-          updated
-        );
-
-        setPaidAmountInput(
-          String(
-            updated.paidAmount ||
-              0
+      setInvoices(
+        (previous) =>
+          previous.map(
+            (item) =>
+              item.id === invoice.id
+                ? (data as Invoice)
+                : item
           )
-        );
+      );
 
-        alert(
-          'Payment information updated.'
-        );
-      } catch (error: any) {
-        console.error(
-          'Payment update failed:',
-          error
-        );
-
-        alert(
-          `Unable to update payment information.\n\n${getPocketBaseErrorMessage(
-            error
-          )}`
-        );
-      }
+      setSelectedInvoice(
+        data as Invoice
+      );
     };
 
-  /* =======================================================
-     PRINT / PDF
-  ======================================================= */
+  const updatePayment = async () => {
+    if (!selectedInvoice) {
+      return;
+    }
+
+    if (!isAdmin) {
+      return;
+    }
+
+    const paidAmount =
+      Number(
+        paidAmountInput || 0
+      );
+
+    const total =
+      Number(
+        selectedInvoice.total_amount ||
+          0
+      );
+
+    if (
+      Number.isNaN(
+        paidAmount
+      )
+    ) {
+      alert(
+        'Please enter a valid payment amount.'
+      );
+      return;
+    }
+
+    if (paidAmount < 0) {
+      alert(
+        'Paid amount cannot be negative.'
+      );
+      return;
+    }
+
+    if (paidAmount > total) {
+      alert(
+        `Paid amount cannot exceed ${formatCurrency(
+          total
+        )}.`
+      );
+      return;
+    }
+
+    let paymentStatus =
+      'UNPAID';
+
+    if (paidAmount >= total) {
+      paymentStatus = 'PAID';
+    } else if (
+      paidAmount > 0
+    ) {
+      paymentStatus =
+        'PARTIALLY PAID';
+    } else {
+      const due =
+        selectedInvoice.due_date
+          ? new Date(
+              selectedInvoice.due_date
+            )
+          : null;
+
+      if (
+        due &&
+        due < new Date() &&
+        total > 0
+      ) {
+        paymentStatus =
+          'OVERDUE';
+      }
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from('invoices')
+      .update({
+        paid_amount:
+          paidAmount,
+
+        payment_status:
+          paymentStatus,
+
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        'id',
+        selectedInvoice.id
+      )
+      .select('*')
+      .single();
+
+    if (error) {
+      alert(
+        `Unable to update payment.\n\n${getErrorMessage(
+          error
+        )}`
+      );
+      return;
+    }
+
+    setInvoices(
+      (previous) =>
+        previous.map(
+          (item) =>
+            item.id ===
+            selectedInvoice.id
+              ? (data as Invoice)
+              : item
+        )
+    );
+
+    setSelectedInvoice(
+      data as Invoice
+    );
+
+    setPaidAmountInput(
+      String(
+        data.paid_amount || 0
+      )
+    );
+
+    alert(
+      'Payment information updated.'
+    );
+  };
 
   const printInvoice = () => {
     if (!selectedInvoice) {
       return;
     }
 
-    const client =
-      selectedClient ||
-      getClient(
-        selectedInvoice.client
+    const invoice =
+      selectedInvoice;
+
+    const lead =
+      selectedLead ||
+      getLead(
+        invoice.lead_id
       );
 
     const quotation =
       selectedQuotation ||
       getQuotation(
-        selectedInvoice.quotation
+        invoice.quotation_id
       );
 
-    const subTotal =
-      Number(
-        selectedInvoice.subTotal ||
-          0
+    const items =
+      getInvoiceItems(
+        invoice.id
       );
 
-    const discount =
+    const subtotal =
       Number(
-        selectedInvoice.discount ||
-          0
+        invoice.subtotal || 0
       );
 
     const tax =
       Number(
-        selectedInvoice.tax ||
-          0
+        invoice.tax_amount || 0
       );
 
-    const grandTotal =
+    const total =
       Number(
-        selectedInvoice.grandTotal ||
-          0
+        invoice.total_amount || 0
       );
 
-    const paidAmount =
+    const paid =
       Number(
-        selectedInvoice.paidAmount ||
-          0
+        invoice.paid_amount || 0
       );
 
     const balance =
       Math.max(
-        grandTotal -
-          paidAmount,
+        total - paid,
         0
       );
 
     const itemRows =
-      selectedItems.length > 0
-        ? selectedItems
+      items.length
+        ? items
             .map(
-              (
-                item,
-                index
-              ) => `
+              (item, index) => `
                 <tr>
-                  <td>
-                    ${index + 1}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      item.description
-                    )}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      item.quantity
-                    )}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(
-                      item.unit ||
-                        '—'
-                    )}
-                  </td>
-
+                  <td>${index + 1}</td>
+                  <td>${escapeHtml(
+                    item.description
+                  )}</td>
+                  <td>${escapeHtml(
+                    item.quantity
+                  )}</td>
+                  <td>${escapeHtml(
+                    item.unit || '—'
+                  )}</td>
                   <td class="number">
                     ${escapeHtml(
                       formatCurrency(
@@ -1314,7 +1220,6 @@ export default function Invoices() {
                       )
                     )}
                   </td>
-
                   <td class="number">
                     ${escapeHtml(
                       formatCurrency(
@@ -1327,802 +1232,644 @@ export default function Invoices() {
             )
             .join('')
         : `
-            <tr>
-              <td
-                colspan="6"
-                style="text-align:center"
-              >
-                No invoice items
-              </td>
-            </tr>
-          `;
-
-    const gstRows =
-      quotation?.gstType ===
-      'CGST_SGST'
-        ? `
-          <div class="summary-row">
-            <span>
-              CGST (${
-                quotation.gstRate
-                  ? quotation.gstRate /
-                    2
-                  : 0
-              }%)
-            </span>
-
-            <strong>
-              ${escapeHtml(
-                formatCurrency(
-                  quotation.cgst ||
-                    0
-                )
-              )}
-            </strong>
-          </div>
-
-          <div class="summary-row">
-            <span>
-              SGST (${
-                quotation.gstRate
-                  ? quotation.gstRate /
-                    2
-                  : 0
-              }%)
-            </span>
-
-            <strong>
-              ${escapeHtml(
-                formatCurrency(
-                  quotation.sgst ||
-                    0
-                )
-              )}
-            </strong>
-          </div>
-        `
-        : quotation?.gstType ===
-          'IGST'
-        ? `
-          <div class="summary-row">
-
-            <span>
-              IGST (${
-                quotation.gstRate ||
-                0
-              }%)
-            </span>
-
-            <strong>
-              ${escapeHtml(
-                formatCurrency(
-                  quotation.igst ||
-                    0
-                )
-              )}
-            </strong>
-
-          </div>
-        `
-        : `
-          <div class="summary-row">
-
-            <span>
-              Tax / GST
-            </span>
-
-            <strong>
-              ${escapeHtml(
-                formatCurrency(
-                  tax
-                )
-              )}
-            </strong>
-
-          </div>
+          <tr>
+            <td colspan="6" class="empty">
+              No invoice items
+            </td>
+          </tr>
         `;
+
+    let gstRows = '';
+
+    if (
+      Number(invoice.cgst || 0) >
+        0 ||
+      Number(invoice.sgst || 0) >
+        0
+    ) {
+      gstRows += `
+        <div class="summary-row">
+          <span>CGST</span>
+          <strong>
+            ${escapeHtml(
+              formatCurrency(
+                invoice.cgst || 0
+              )
+            )}
+          </strong>
+        </div>
+
+        <div class="summary-row">
+          <span>SGST</span>
+          <strong>
+            ${escapeHtml(
+              formatCurrency(
+                invoice.sgst || 0
+              )
+            )}
+          </strong>
+        </div>
+      `;
+    }
+
+    if (
+      Number(invoice.igst || 0) >
+      0
+    ) {
+      gstRows += `
+        <div class="summary-row">
+          <span>IGST</span>
+          <strong>
+            ${escapeHtml(
+              formatCurrency(
+                invoice.igst || 0
+              )
+            )}
+          </strong>
+        </div>
+      `;
+    }
+
+    if (!gstRows) {
+      gstRows = `
+        <div class="summary-row">
+          <span>Tax / GST</span>
+          <strong>
+            ${escapeHtml(
+              formatCurrency(tax)
+            )}
+          </strong>
+        </div>
+      `;
+    }
 
     const html = `
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
-  <meta charset="UTF-8" />
-
-  <title>
-    ${escapeHtml(
-      selectedInvoice.invoiceNumber
-    )}
-  </title>
-
-  <style>
-
-    @page {
-      size: A4;
-      margin: 14mm;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-
-      font-family:
-        Arial,
-        Helvetica,
-        sans-serif;
-
-      color: #222;
-      background: white;
-    }
-
-    .page {
-      width: 100%;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      gap: 30px;
-
-      border-bottom:
-        3px solid #9a641f;
-
-      padding-bottom: 18px;
-    }
-
-    .logo {
-      width: 120px;
-      height: auto;
-      object-fit: contain;
-    }
-
-    .company {
-      text-align: right;
-    }
-
-    .company h1 {
-      margin:
-        0 0 6px;
-
-      font-size: 22px;
-      letter-spacing: 1px;
-    }
-
-    .company p {
-      margin: 3px 0;
-      font-size: 11px;
-    }
-
-    .title {
-      text-align: center;
-      margin: 25px 0;
-    }
-
-    .title h2 {
-      margin: 0;
-
-      font-size: 26px;
-
-      letter-spacing: 2px;
-    }
-
-    .invoice-meta {
-      display: grid;
-
-      grid-template-columns:
-        1fr 1fr;
-
-      gap: 25px;
-
-      margin-bottom: 25px;
-    }
-
-    .box {
-      border:
-        1px solid #ddd;
-
-      padding: 14px;
-
-      border-radius: 5px;
-    }
-
-    .box h3 {
-      margin:
-        0 0 9px;
-
-      color: #9a641f;
-
-      font-size: 13px;
-    }
-
-    .box p {
-      margin: 4px 0;
-      font-size: 11px;
-    }
-
-    table {
-      width: 100%;
-
-      border-collapse:
-        collapse;
-
-      margin-top: 15px;
-    }
-
-    th {
-      background: #222;
-
-      color: white;
-
-      padding: 9px;
-
-      font-size: 11px;
-
-      text-align: left;
-    }
-
-    td {
-      border-bottom:
-        1px solid #ddd;
-
-      padding: 9px;
-
-      font-size: 11px;
-    }
-
-    .number {
-      text-align: right;
-    }
-
-    .summary {
-      width: 45%;
-
-      margin-left: auto;
-
-      margin-top: 20px;
-    }
-
-    .summary-row {
-      display: flex;
-
-      justify-content:
-        space-between;
-
-      padding: 7px 0;
-
-      font-size: 12px;
-    }
-
-    .grand {
-      border-top:
-        2px solid #222;
-
-      font-size: 16px;
-
-      font-weight: bold;
-
-      color: #9a641f;
-
-      padding-top: 12px;
-    }
-
-    .terms {
-      margin-top: 30px;
-
-      border-top:
-        1px solid #ddd;
-
-      padding-top: 15px;
-    }
-
-    .terms h3 {
-      color: #9a641f;
-
-      font-size: 13px;
-    }
-
-    .terms p {
-      white-space: pre-line;
-
-      font-size: 10px;
-
-      line-height: 1.5;
-    }
-
-    .footer {
-      margin-top: 35px;
-
-      padding-top: 12px;
-
-      border-top:
-        1px solid #ddd;
-
-      text-align: center;
-
-      font-size: 9px;
-
-      color: #666;
-    }
-
-    @media print {
-
-      body {
-        print-color-adjust:
-          exact;
-
-        -webkit-print-color-adjust:
-          exact;
-      }
-
-    }
-
-  </style>
-
+<meta charset="UTF-8">
+
+<title>
+${escapeHtml(
+  invoice.invoice_number
+)}
+</title>
+
+<style>
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #222;
+  background: #fff;
+}
+
+.page {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 30px;
+  border-bottom: 3px solid #9a641f;
+  padding-bottom: 16px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.logo {
+  width: 115px;
+  height: auto;
+  object-fit: contain;
+}
+
+.wordmark {
+  width: 190px;
+  max-height: 42px;
+  object-fit: contain;
+  margin-top: 8px;
+}
+
+.company {
+  text-align: right;
+}
+
+.company h1 {
+  margin: 0 0 6px;
+  font-size: 21px;
+  letter-spacing: 1px;
+}
+
+.company p {
+  margin: 3px 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.title {
+  text-align: center;
+  margin: 22px 0;
+}
+
+.title h2 {
+  margin: 0;
+  font-size: 25px;
+  letter-spacing: 2px;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.box {
+  border: 1px solid #ddd;
+  padding: 13px;
+  border-radius: 5px;
+}
+
+.box h3 {
+  margin: 0 0 9px;
+  color: #9a641f;
+  font-size: 12px;
+}
+
+.box p {
+  margin: 4px 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+th {
+  background: #151b2b;
+  color: #fff;
+  padding: 8px;
+  font-size: 10px;
+  text-align: left;
+}
+
+td {
+  border-bottom: 1px solid #ddd;
+  padding: 8px;
+  font-size: 10px;
+}
+
+.number {
+  text-align: right;
+}
+
+.empty {
+  text-align: center;
+}
+
+.summary {
+  width: 44%;
+  margin-left: auto;
+  margin-top: 18px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 11px;
+}
+
+.grand {
+  border-top: 2px solid #222;
+  margin-top: 5px;
+  padding-top: 10px;
+  font-size: 15px;
+  color: #9a641f;
+}
+
+.payment {
+  margin-top: 22px;
+}
+
+.terms {
+  margin-top: 25px;
+  border-top: 1px solid #ddd;
+  padding-top: 12px;
+}
+
+.terms h3 {
+  color: #9a641f;
+  font-size: 12px;
+}
+
+.terms p {
+  white-space: pre-line;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.footer {
+  margin-top: 30px;
+  padding-top: 10px;
+  border-top: 1px solid #ddd;
+  text-align: center;
+  font-size: 9px;
+  color: #666;
+}
+
+@media print {
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+</style>
 </head>
 
 <body>
 
-  <div class="page">
+<div class="page">
 
-    <div class="header">
+  <div class="header">
 
-      <div>
+    <div class="brand">
 
-        <img
-          src="/logo.png"
-          class="logo"
-          onerror="
-            this.style.display='none'
-          "
-        />
+      <img
+        src="/logo.png"
+        class="logo"
+      />
 
-      </div>
-
-      <div class="company">
-
-        <h1>
-          ${escapeHtml(
-            COMPANY.name
-          )}
-        </h1>
-
-        <p>
-
-          ${escapeHtml(
-            COMPANY.address[0]
-          )}
-
-          <br />
-
-          ${escapeHtml(
-            COMPANY.address[1]
-          )}
-
-          <br />
-
-          ${escapeHtml(
-            COMPANY.address[2]
-          )}
-
-        </p>
-
-        <p>
-          Phone:
-          ${escapeHtml(
-            COMPANY.phone
-          )}
-        </p>
-
-        <p>
-          ${escapeHtml(
-            COMPANY.website
-          )}
-        </p>
-
-      </div>
+      <img
+        src="/srl-wordmark.png"
+        class="wordmark"
+      />
 
     </div>
 
-    <div class="title">
+    <div class="company">
 
-      <h2>
-        TAX INVOICE
-      </h2>
-
-    </div>
-
-    <div class="invoice-meta">
-
-      <div class="box">
-
-        <h3>
-          BILL TO
-        </h3>
-
-        <p>
-
-          <strong>
-
-            ${escapeHtml(
-              client?.company ||
-                client?.name ||
-                'Client'
-            )}
-
-          </strong>
-
-        </p>
-
-        ${
-          client?.company &&
-          client?.name
-            ? `
-              <p>
-                ${escapeHtml(
-                  client.name
-                )}
-              </p>
-            `
-            : ''
-        }
-
-        ${
-          client?.address
-            ? `
-              <p>
-                ${escapeHtml(
-                  client.address
-                )}
-              </p>
-            `
-            : ''
-        }
-
-        ${
-          client?.phone
-            ? `
-              <p>
-                Phone:
-                ${escapeHtml(
-                  client.phone
-                )}
-              </p>
-            `
-            : ''
-        }
-
-        ${
-          client?.email
-            ? `
-              <p>
-                Email:
-                ${escapeHtml(
-                  client.email
-                )}
-              </p>
-            `
-            : ''
-        }
-
-      </div>
-
-      <div class="box">
-
-        <h3>
-          INVOICE DETAILS
-        </h3>
-
-        <p>
-
-          <strong>
-            Invoice No:
-          </strong>
-
-          ${escapeHtml(
-            selectedInvoice.invoiceNumber
-          )}
-
-        </p>
-
-        <p>
-
-          <strong>
-            Invoice Date:
-          </strong>
-
-          ${escapeHtml(
-            formatDate(
-              selectedInvoice.invoiceDate
-            )
-          )}
-
-        </p>
-
-        <p>
-
-          <strong>
-            Due Date:
-          </strong>
-
-          ${escapeHtml(
-            formatDate(
-              selectedInvoice.dueDate
-            )
-          )}
-
-        </p>
-
-        <p>
-
-          <strong>
-            Project:
-          </strong>
-
-          ${escapeHtml(
-            selectedInvoice.projectName ||
-              '—'
-          )}
-
-        </p>
-
-        ${
-          quotation
-            ? `
-              <p>
-
-                <strong>
-                  Quotation:
-                </strong>
-
-                ${escapeHtml(
-                  quotation.quotationNumber
-                )}
-
-              </p>
-            `
-            : ''
-        }
-
-      </div>
-
-    </div>
-
-    <table>
-
-      <thead>
-
-        <tr>
-
-          <th>
-            #
-          </th>
-
-          <th>
-            Description
-          </th>
-
-          <th>
-            Qty
-          </th>
-
-          <th>
-            Unit
-          </th>
-
-          <th class="number">
-            Rate
-          </th>
-
-          <th class="number">
-            Amount
-          </th>
-
-        </tr>
-
-      </thead>
-
-      <tbody>
-
-        ${itemRows}
-
-      </tbody>
-
-    </table>
-
-    <div class="summary">
-
-      <div class="summary-row">
-
-        <span>
-          Subtotal
-        </span>
-
-        <strong>
-          ${escapeHtml(
-            formatCurrency(
-              subTotal
-            )
-          )}
-        </strong>
-
-      </div>
-
-      <div class="summary-row">
-
-        <span>
-          Discount
-        </span>
-
-        <strong>
-
-          -
-          ${escapeHtml(
-            formatCurrency(
-              discount
-            )
-          )}
-
-        </strong>
-
-      </div>
-
-      ${gstRows}
-
-      <div class="summary-row grand">
-
-        <span>
-          Grand Total
-        </span>
-
-        <strong>
-
-          ${escapeHtml(
-            formatCurrency(
-              grandTotal
-            )
-          )}
-
-        </strong>
-
-      </div>
-
-    </div>
-
-    <div
-      class="box"
-      style="margin-top:25px"
-    >
-
-      <h3>
-        PAYMENT DETAILS
-      </h3>
-
-      <p>
-
-        <strong>
-          Payment Terms:
-        </strong>
-
-        ${escapeHtml(
-          selectedInvoice.paymentTerms ||
-            '—'
-        )}
-
-      </p>
-
-      <p>
-
-        <strong>
-          Payment Status:
-        </strong>
-
-        ${escapeHtml(
-          selectedInvoice.paymentStatus
-        )}
-
-      </p>
-
-      <p>
-
-        <strong>
-          Paid Amount:
-        </strong>
-
-        ${escapeHtml(
-          formatCurrency(
-            paidAmount
-          )
-        )}
-
-      </p>
-
-      <p>
-
-        <strong>
-          Balance:
-        </strong>
-
-        ${escapeHtml(
-          formatCurrency(
-            balance
-          )
-        )}
-
-      </p>
-
-    </div>
-
-    ${
-      quotation?.termsConditions
-        ? `
-          <div class="terms">
-
-            <h3>
-              TERMS & CONDITIONS
-            </h3>
-
-            <p>
-              ${escapeHtml(
-                quotation.termsConditions
-              )}
-            </p>
-
-          </div>
-        `
-        : ''
-    }
-
-    ${
-      selectedInvoice.notes
-        ? `
-          <div class="terms">
-
-            <h3>
-              NOTES
-            </h3>
-
-            <p>
-              ${escapeHtml(
-                selectedInvoice.notes
-              )}
-            </p>
-
-          </div>
-        `
-        : ''
-    }
-
-    <div class="footer">
-
-      <strong>
+      <h1>
         ${escapeHtml(
           COMPANY.name
         )}
-      </strong>
+      </h1>
 
-      <br />
+      <p>
+        ${escapeHtml(
+          COMPANY.address[0]
+        )}
+        <br>
+        ${escapeHtml(
+          COMPANY.address[1]
+        )}
+        <br>
+        ${escapeHtml(
+          COMPANY.address[2]
+        )}
+      </p>
 
-      Thank you for your business.
+      <p>
+        Phone:
+        ${escapeHtml(
+          COMPANY.phone
+        )}
+        /
+        ${escapeHtml(
+          COMPANY.phone2
+        )}
+      </p>
+
+      <p>
+        ${escapeHtml(
+          COMPANY.website
+        )}
+      </p>
 
     </div>
 
   </div>
 
-  <script>
+  <div class="title">
+    <h2>TAX INVOICE</h2>
+  </div>
 
-    window.onload = function() {
-      window.print();
-    };
+  <div class="meta">
 
-  </script>
+    <div class="box">
+
+      <h3>BILL TO</h3>
+
+      <p>
+        <strong>
+          ${escapeHtml(
+            lead?.company ||
+              lead?.name ||
+              'Client'
+          )}
+        </strong>
+      </p>
+
+      ${
+        lead?.company &&
+        lead?.name
+          ? `<p>${escapeHtml(
+              lead.name
+            )}</p>`
+          : ''
+      }
+
+      ${
+        lead?.phone
+          ? `<p>Phone: ${escapeHtml(
+              lead.phone
+            )}</p>`
+          : ''
+      }
+
+      ${
+        lead?.email
+          ? `<p>Email: ${escapeHtml(
+              lead.email
+            )}</p>`
+          : ''
+      }
+
+      ${
+        lead?.project_type
+          ? `<p>Project: ${escapeHtml(
+              lead.project_type
+            )}</p>`
+          : ''
+      }
+
+    </div>
+
+    <div class="box">
+
+      <h3>INVOICE DETAILS</h3>
+
+      <p>
+        <strong>Invoice No:</strong>
+        ${escapeHtml(
+          invoice.invoice_number
+        )}
+      </p>
+
+      <p>
+        <strong>Invoice Date:</strong>
+        ${escapeHtml(
+          formatDate(
+            invoice.invoice_date
+          )
+        )}
+      </p>
+
+      <p>
+        <strong>Due Date:</strong>
+        ${escapeHtml(
+          formatDate(
+            invoice.due_date
+          )
+        )}
+      </p>
+
+      ${
+        quotation
+          ? `
+            <p>
+              <strong>Quotation:</strong>
+              ${escapeHtml(
+                quotation.quotation_number
+              )}
+            </p>
+          `
+          : ''
+      }
+
+      ${
+        lead?.project_type
+          ? `
+            <p>
+              <strong>Project:</strong>
+              ${escapeHtml(
+                lead.project_type
+              )}
+            </p>
+          `
+          : ''
+      }
+
+    </div>
+
+  </div>
+
+  <table>
+
+    <thead>
+
+      <tr>
+        <th>#</th>
+        <th>Description</th>
+        <th>Qty</th>
+        <th>Unit</th>
+        <th class="number">
+          Rate
+        </th>
+        <th class="number">
+          Amount
+        </th>
+      </tr>
+
+    </thead>
+
+    <tbody>
+
+      ${itemRows}
+
+    </tbody>
+
+  </table>
+
+  <div class="summary">
+
+    <div class="summary-row">
+
+      <span>Subtotal</span>
+
+      <strong>
+        ${escapeHtml(
+          formatCurrency(
+            subtotal
+          )
+        )}
+      </strong>
+
+    </div>
+
+    ${
+      Number(
+        quotation?.discount_amount ||
+          0
+      ) > 0
+        ? `
+          <div class="summary-row">
+            <span>Discount</span>
+            <strong>
+              -
+              ${escapeHtml(
+                formatCurrency(
+                  quotation?.discount_amount ||
+                    0
+                )
+              )}
+            </strong>
+          </div>
+        `
+        : ''
+    }
+
+    ${gstRows}
+
+    <div class="summary-row grand">
+
+      <span>Grand Total</span>
+
+      <strong>
+        ${escapeHtml(
+          formatCurrency(total)
+        )}
+      </strong>
+
+    </div>
+
+  </div>
+
+  <div class="box payment">
+
+    <h3>PAYMENT DETAILS</h3>
+
+    <p>
+      <strong>
+        Payment Terms:
+      </strong>
+      ${escapeHtml(
+        invoice.payment_terms ||
+          '—'
+      )}
+    </p>
+
+    <p>
+      <strong>
+        Payment Status:
+      </strong>
+      ${escapeHtml(
+        invoice.payment_status
+      )}
+    </p>
+
+    <p>
+      <strong>
+        Paid Amount:
+      </strong>
+      ${escapeHtml(
+        formatCurrency(paid)
+      )}
+    </p>
+
+    <p>
+      <strong>
+        Balance:
+      </strong>
+      ${escapeHtml(
+        formatCurrency(balance)
+      )}
+    </p>
+
+  </div>
+
+  ${
+    invoice.terms_conditions
+      ? `
+        <div class="terms">
+
+          <h3>
+            TERMS & CONDITIONS
+          </h3>
+
+          <p>
+            ${escapeHtml(
+              invoice.terms_conditions
+            )}
+          </p>
+
+        </div>
+      `
+      : ''
+  }
+
+  ${
+    invoice.notes
+      ? `
+        <div class="terms">
+
+          <h3>NOTES</h3>
+
+          <p>
+            ${escapeHtml(
+              invoice.notes
+            )}
+          </p>
+
+        </div>
+      `
+      : ''
+  }
+
+  <div class="footer">
+
+    <strong>
+      ${escapeHtml(
+        COMPANY.name
+      )}
+    </strong>
+
+    <br>
+
+    Thank you for your business.
+
+  </div>
+
+</div>
+
+<script>
+
+window.onload = function() {
+  window.print();
+};
+
+</script>
 
 </body>
-
 </html>
 `;
 
@@ -2135,9 +1882,8 @@ export default function Invoices() {
 
     if (!printWindow) {
       alert(
-        'Please allow pop-ups in your browser to print the invoice.'
+        'Please allow pop-ups to print the invoice.'
       );
-
       return;
     }
 
@@ -2150,20 +1896,49 @@ export default function Invoices() {
     printWindow.document.close();
   };
 
-  /* =======================================================
-     UI
-  ======================================================= */
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="mx-auto max-w-xl rounded-xl bg-white p-10 text-center shadow-sm">
+          <p className="text-gray-500">
+            Loading invoices...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="mx-auto max-w-xl rounded-xl bg-white p-8 text-center shadow-sm">
+          <h2 className="text-xl font-bold text-red-600">
+            Access Denied
+          </h2>
+
+          <p className="mt-2 text-gray-600">
+            Only Admin can access invoices.
+          </p>
+
+          <button
+            onClick={() =>
+              navigate('/portal')
+            }
+            className="mt-5 rounded-lg bg-[#C5832B] px-5 py-3 text-white"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
 
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto max-w-7xl">
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
-
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
           <div>
 
@@ -2171,16 +1946,16 @@ export default function Invoices() {
               onClick={() =>
                 navigate('/portal')
               }
-              className="text-sm text-gray-500 hover:text-[#9a641f] mb-2"
+              className="mb-2 text-sm text-gray-500 hover:text-[#9a641f]"
             >
               ← Back to Dashboard
             </button>
 
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-gray-900">
               Invoices
             </h1>
 
-            <p className="text-gray-500 mt-1">
+            <p className="mt-1 text-gray-500">
               Manage invoices, payments and billing.
             </p>
 
@@ -2189,96 +1964,86 @@ export default function Invoices() {
           <button
             onClick={loadData}
             disabled={loading}
-            className="px-5 py-3 rounded-lg bg-gray-900 text-white hover:bg-black disabled:opacity-50"
+            className="rounded-lg bg-gray-900 px-5 py-3 text-white hover:bg-black disabled:opacity-50"
           >
-            {loading
-              ? 'Refreshing...'
-              : 'Refresh'}
+            Refresh
           </button>
 
         </div>
 
-        {/* =================================================
-            STATS
-        ================================================= */}
+        <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-6">
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-7">
-
-          <div className="bg-white rounded-xl border p-5">
-
+          <div className="rounded-xl border bg-white p-5">
             <p className="text-sm text-gray-500">
               Total Invoices
             </p>
 
-            <p className="text-2xl font-bold mt-2">
+            <p className="mt-2 text-2xl font-bold">
               {stats.total}
             </p>
-
           </div>
 
-          <div className="bg-white rounded-xl border p-5">
-
+          <div className="rounded-xl border bg-white p-5">
             <p className="text-sm text-gray-500">
               Invoice Value
             </p>
 
-            <p className="text-xl font-bold mt-2">
+            <p className="mt-2 text-xl font-bold">
               {formatCurrency(
                 stats.totalValue
               )}
             </p>
-
           </div>
 
-          <div className="bg-white rounded-xl border p-5">
-
+          <div className="rounded-xl border bg-white p-5">
             <p className="text-sm text-gray-500">
               Paid
             </p>
 
-            <p className="text-xl font-bold mt-2 text-green-700">
+            <p className="mt-2 text-xl font-bold text-green-700">
               {formatCurrency(
                 stats.paid
               )}
             </p>
-
           </div>
 
-          <div className="bg-white rounded-xl border p-5">
-
+          <div className="rounded-xl border bg-white p-5">
             <p className="text-sm text-gray-500">
               Outstanding
             </p>
 
-            <p className="text-xl font-bold mt-2 text-orange-600">
+            <p className="mt-2 text-xl font-bold text-orange-600">
               {formatCurrency(
                 stats.outstanding
               )}
             </p>
-
           </div>
 
-          <div className="bg-white rounded-xl border p-5">
-
+          <div className="rounded-xl border bg-white p-5">
             <p className="text-sm text-gray-500">
               Sent
             </p>
 
-            <p className="text-2xl font-bold mt-2">
+            <p className="mt-2 text-2xl font-bold">
               {stats.sent}
             </p>
+          </div>
 
+          <div className="rounded-xl border bg-white p-5">
+            <p className="text-sm text-gray-500">
+              Overdue
+            </p>
+
+            <p className="mt-2 text-2xl font-bold text-red-600">
+              {stats.overdue}
+            </p>
           </div>
 
         </div>
 
-        {/* =================================================
-            FILTERS
-        ================================================= */}
+        <div className="mb-6 rounded-xl border bg-white p-4">
 
-        <div className="bg-white border rounded-xl p-4 mb-6">
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 
             <input
               value={search}
@@ -2287,8 +2052,8 @@ export default function Invoices() {
                   event.target.value
                 )
               }
-              placeholder="Search invoice, client or project..."
-              className="border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#c5832b]"
+              placeholder="Search invoice, client, phone..."
+              className="rounded-lg border px-4 py-3 outline-none focus:ring-2 focus:ring-[#c5832b]"
             />
 
             <select
@@ -2298,9 +2063,8 @@ export default function Invoices() {
                   event.target.value
                 )
               }
-              className="border rounded-lg px-4 py-3"
+              className="rounded-lg border px-4 py-3"
             >
-
               <option value="ALL">
                 All Status
               </option>
@@ -2316,7 +2080,6 @@ export default function Invoices() {
               <option value="CANCELLED">
                 Cancelled
               </option>
-
             </select>
 
             <select
@@ -2326,11 +2089,10 @@ export default function Invoices() {
                   event.target.value
                 )
               }
-              className="border rounded-lg px-4 py-3"
+              className="rounded-lg border px-4 py-3"
             >
-
               <option value="ALL">
-                All Payment Status
+                All Payments
               </option>
 
               <option value="UNPAID">
@@ -2348,45 +2110,32 @@ export default function Invoices() {
               <option value="OVERDUE">
                 Overdue
               </option>
-
             </select>
 
           </div>
 
         </div>
 
-        {/* =================================================
-            INVOICE TABLE
-        ================================================= */}
+        <div className="overflow-hidden rounded-xl border bg-white">
 
-        <div className="bg-white border rounded-xl overflow-hidden">
-
-          {loading ? (
-
-            <div className="p-10 text-center text-gray-500">
-              Loading invoices...
-            </div>
-
-          ) : filteredInvoices.length === 0 ? (
-
+          {filteredInvoices.length ===
+          0 ? (
             <div className="p-12 text-center">
 
-              <div className="text-4xl mb-3">
+              <div className="mb-3 text-4xl">
                 🧾
               </div>
 
-              <h3 className="font-semibold text-lg">
+              <h3 className="text-lg font-semibold">
                 No invoices found
               </h3>
 
-              <p className="text-gray-500 mt-1">
+              <p className="mt-1 text-gray-500">
                 Approved quotations can be converted into invoices.
               </p>
 
             </div>
-
           ) : (
-
             <div className="overflow-x-auto">
 
               <table className="w-full">
@@ -2395,27 +2144,31 @@ export default function Invoices() {
 
                   <tr>
 
-                    <th className="text-left px-5 py-4">
+                    <th className="px-5 py-4 text-left">
                       Invoice
                     </th>
 
-                    <th className="text-left px-5 py-4">
+                    <th className="px-5 py-4 text-left">
                       Client
                     </th>
 
-                    <th className="text-left px-5 py-4">
+                    <th className="px-5 py-4 text-left">
                       Date
                     </th>
 
-                    <th className="text-left px-5 py-4">
+                    <th className="px-5 py-4 text-left">
+                      Due
+                    </th>
+
+                    <th className="px-5 py-4 text-left">
                       Status
                     </th>
 
-                    <th className="text-left px-5 py-4">
+                    <th className="px-5 py-4 text-left">
                       Payment
                     </th>
 
-                    <th className="text-right px-5 py-4">
+                    <th className="px-5 py-4 text-right">
                       Total
                     </th>
 
@@ -2427,10 +2180,9 @@ export default function Invoices() {
 
                   {filteredInvoices.map(
                     (invoice) => {
-
-                      const client =
-                        getClient(
-                          invoice.client
+                      const lead =
+                        getLead(
+                          invoice.lead_id
                         );
 
                       return (
@@ -2438,29 +2190,21 @@ export default function Invoices() {
                           key={
                             invoice.id
                           }
-                          className="border-b hover:bg-gray-50 cursor-pointer"
                           onClick={() =>
                             openInvoice(
                               invoice
                             )
                           }
+                          className="cursor-pointer border-b hover:bg-gray-50"
                         >
 
                           <td className="px-5 py-4">
 
                             <p className="font-semibold text-[#9a641f]">
                               {
-                                invoice.invoiceNumber
+                                invoice.invoice_number
                               }
                             </p>
-
-                            {invoice.projectName && (
-                              <p className="text-xs text-gray-500">
-                                {
-                                  invoice.projectName
-                                }
-                              </p>
-                            )}
 
                           </td>
 
@@ -2468,16 +2212,16 @@ export default function Invoices() {
 
                             <p className="font-medium">
                               {
-                                client?.company ||
-                                client?.name ||
+                                lead?.company ||
+                                lead?.name ||
                                 '—'
                               }
                             </p>
 
-                            {client?.phone && (
+                            {lead?.phone && (
                               <p className="text-xs text-gray-500">
                                 {
-                                  client.phone
+                                  lead.phone
                                 }
                               </p>
                             )}
@@ -2485,32 +2229,29 @@ export default function Invoices() {
                           </td>
 
                           <td className="px-5 py-4 text-sm">
-
                             {formatDate(
-                              invoice.invoiceDate
+                              invoice.invoice_date
                             )}
+                          </td>
 
+                          <td className="px-5 py-4 text-sm">
+                            {formatDate(
+                              invoice.due_date
+                            )}
                           </td>
 
                           <td className="px-5 py-4">
 
                             <span
-                              className={`
-                                inline-flex
-                                px-3 py-1
-                                rounded-full
-                                text-xs
-                                font-semibold
-                                ${
-                                  invoice.status ===
-                                  'SENT'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : invoice.status ===
-                                      'CANCELLED'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                }
-                              `}
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                invoice.status ===
+                                'SENT'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : invoice.status ===
+                                    'CANCELLED'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}
                             >
                               {
                                 invoice.status
@@ -2522,39 +2263,30 @@ export default function Invoices() {
                           <td className="px-5 py-4">
 
                             <span
-                              className={`
-                                inline-flex
-                                px-3 py-1
-                                rounded-full
-                                text-xs
-                                font-semibold
-                                ${
-                                  invoice.paymentStatus ===
-                                  'PAID'
-                                    ? 'bg-green-100 text-green-700'
-                                    : invoice.paymentStatus ===
-                                      'PARTIALLY PAID'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : invoice.paymentStatus ===
-                                      'OVERDUE'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                }
-                              `}
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                invoice.payment_status ===
+                                'PAID'
+                                  ? 'bg-green-100 text-green-700'
+                                  : invoice.payment_status ===
+                                    'PARTIALLY PAID'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : invoice.payment_status ===
+                                    'OVERDUE'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}
                             >
                               {
-                                invoice.paymentStatus
+                                invoice.payment_status
                               }
                             </span>
 
                           </td>
 
                           <td className="px-5 py-4 text-right font-bold">
-
                             {formatCurrency(
-                              invoice.grandTotal
+                              invoice.total_amount
                             )}
-
                           </td>
 
                         </tr>
@@ -2573,20 +2305,13 @@ export default function Invoices() {
 
       </div>
 
-      {/* ===================================================
-          DETAILS MODAL
-      =================================================== */}
-
       {showDetails &&
         selectedInvoice && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
 
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+            <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white">
 
-            <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
-
-              {/* HEADER */}
-
-              <div className="p-6 border-b flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between border-b p-6">
 
                 <div>
 
@@ -2596,14 +2321,14 @@ export default function Invoices() {
 
                   <h2 className="text-2xl font-bold">
                     {
-                      selectedInvoice.invoiceNumber
+                      selectedInvoice.invoice_number
                     }
                   </h2>
 
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="mt-1 text-sm text-gray-500">
                     {
-                      selectedInvoice.projectName ||
-                      'General Invoice'
+                      selectedLead?.project_type ||
+                      'Invoice'
                     }
                   </p>
 
@@ -2624,118 +2349,103 @@ export default function Invoices() {
 
               <div className="p-6">
 
-                {/* BILL TO + DETAILS */}
+                <div className="grid gap-5 md:grid-cols-2">
 
-                <div className="grid md:grid-cols-2 gap-5">
+                  <div className="rounded-xl border p-5">
 
-                  <div className="border rounded-xl p-5">
-
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
+                    <h3 className="mb-3 font-semibold text-[#9a641f]">
                       Bill To
                     </h3>
 
                     <p className="font-semibold">
-
                       {
-                        selectedClient?.company ||
-                        selectedClient?.name ||
+                        selectedLead?.company ||
+                        selectedLead?.name ||
                         '—'
                       }
-
                     </p>
 
-                    {selectedClient?.company &&
-                      selectedClient?.name && (
+                    {selectedLead?.company &&
+                      selectedLead?.name && (
                         <p>
                           {
-                            selectedClient.name
+                            selectedLead.name
                           }
                         </p>
                       )}
 
-                    {selectedClient?.address && (
-                      <p className="text-sm text-gray-600 mt-2">
+                    {selectedLead?.phone && (
+                      <p className="mt-2 text-sm">
                         {
-                          selectedClient.address
+                          selectedLead.phone
                         }
                       </p>
                     )}
 
-                    {selectedClient?.phone && (
-                      <p className="text-sm mt-2">
-                        {
-                          selectedClient.phone
-                        }
-                      </p>
-                    )}
-
-                    {selectedClient?.email && (
+                    {selectedLead?.email && (
                       <p className="text-sm text-gray-600">
                         {
-                          selectedClient.email
+                          selectedLead.email
                         }
                       </p>
                     )}
 
                   </div>
 
-                  <div className="border rounded-xl p-5">
+                  <div className="rounded-xl border p-5">
 
-                    <h3 className="font-semibold text-[#9a641f] mb-3">
+                    <h3 className="mb-3 font-semibold text-[#9a641f]">
                       Invoice Details
                     </h3>
 
                     <div className="space-y-2 text-sm">
 
                       <p>
-
                         <strong>
                           Invoice:
                         </strong>{' '}
-
                         {
-                          selectedInvoice.invoiceNumber
+                          selectedInvoice.invoice_number
                         }
-
                       </p>
 
                       <p>
-
                         <strong>
                           Date:
                         </strong>{' '}
-
                         {formatDate(
-                          selectedInvoice.invoiceDate
+                          selectedInvoice.invoice_date
                         )}
-
                       </p>
 
                       <p>
-
                         <strong>
                           Due:
                         </strong>{' '}
-
                         {formatDate(
-                          selectedInvoice.dueDate
+                          selectedInvoice.due_date
                         )}
-
                       </p>
 
                       {selectedQuotation && (
                         <p>
-
                           <strong>
                             Quotation:
                           </strong>{' '}
-
                           {
-                            selectedQuotation.quotationNumber
+                            selectedQuotation.quotation_number
                           }
-
                         </p>
                       )}
+
+                      <p>
+                        <strong>
+                          Status:
+                        </strong>{' '}
+                        {
+                          selectedInvoice.status
+                        }
+                      </p>
 
                     </div>
 
@@ -2743,11 +2453,9 @@ export default function Invoices() {
 
                 </div>
 
-                {/* ITEMS */}
+                <div className="mt-6 overflow-hidden rounded-xl border">
 
-                <div className="mt-6 border rounded-xl overflow-hidden">
-
-                  <div className="px-5 py-4 bg-gray-50 border-b font-semibold">
+                  <div className="border-b bg-gray-50 px-5 py-4 font-semibold">
                     Invoice Items
                   </div>
 
@@ -2755,23 +2463,23 @@ export default function Invoices() {
 
                     <table className="w-full">
 
-                      <thead>
+                      <thead className="bg-gray-900 text-sm text-white">
 
-                        <tr className="bg-gray-900 text-white text-sm">
+                        <tr>
 
-                          <th className="text-left px-4 py-3">
+                          <th className="px-4 py-3 text-left">
                             Description
                           </th>
 
-                          <th className="text-right px-4 py-3">
+                          <th className="px-4 py-3 text-right">
                             Qty
                           </th>
 
-                          <th className="text-right px-4 py-3">
+                          <th className="px-4 py-3 text-right">
                             Rate
                           </th>
 
-                          <th className="text-right px-4 py-3">
+                          <th className="px-4 py-3 text-right">
                             Amount
                           </th>
 
@@ -2781,12 +2489,13 @@ export default function Invoices() {
 
                       <tbody>
 
-                        {selectedItems.length >
-                        0 ? (
-
-                          selectedItems.map(
+                        {getInvoiceItems(
+                          selectedInvoice.id
+                        ).length > 0 ? (
+                          getInvoiceItems(
+                            selectedInvoice.id
+                          ).map(
                             (item) => (
-
                               <tr
                                 key={
                                   item.id
@@ -2801,41 +2510,31 @@ export default function Invoices() {
                                 </td>
 
                                 <td className="px-4 py-3 text-right">
-
                                   {
                                     item.quantity
                                   }{' '}
-
                                   {
                                     item.unit ||
                                     ''
                                   }
-
                                 </td>
 
                                 <td className="px-4 py-3 text-right">
-
                                   {formatCurrency(
                                     item.rate
                                   )}
-
                                 </td>
 
                                 <td className="px-4 py-3 text-right font-semibold">
-
                                   {formatCurrency(
                                     item.amount
                                   )}
-
                                 </td>
 
                               </tr>
-
                             )
                           )
-
                         ) : (
-
                           <tr>
 
                             <td
@@ -2846,7 +2545,6 @@ export default function Invoices() {
                             </td>
 
                           </tr>
-
                         )}
 
                       </tbody>
@@ -2857,11 +2555,9 @@ export default function Invoices() {
 
                 </div>
 
-                {/* TOTALS */}
+                <div className="mt-6 flex justify-end">
 
-                <div className="flex justify-end mt-6">
-
-                  <div className="w-full md:w-96 border rounded-xl p-5 space-y-3">
+                  <div className="w-full space-y-3 rounded-xl border p-5 md:w-96">
 
                     <div className="flex justify-between">
 
@@ -2870,157 +2566,97 @@ export default function Invoices() {
                       </span>
 
                       <strong>
-
                         {formatCurrency(
-                          selectedInvoice.subTotal
+                          selectedInvoice.subtotal
                         )}
-
                       </strong>
 
                     </div>
+
+                    {Number(
+                      selectedInvoice.cgst ||
+                        0
+                    ) > 0 && (
+                      <div className="flex justify-between text-sm">
+
+                        <span>
+                          CGST
+                        </span>
+
+                        <strong>
+                          {formatCurrency(
+                            selectedInvoice.cgst ||
+                              0
+                          )}
+                        </strong>
+
+                      </div>
+                    )}
+
+                    {Number(
+                      selectedInvoice.sgst ||
+                        0
+                    ) > 0 && (
+                      <div className="flex justify-between text-sm">
+
+                        <span>
+                          SGST
+                        </span>
+
+                        <strong>
+                          {formatCurrency(
+                            selectedInvoice.sgst ||
+                              0
+                          )}
+                        </strong>
+
+                      </div>
+                    )}
+
+                    {Number(
+                      selectedInvoice.igst ||
+                        0
+                    ) > 0 && (
+                      <div className="flex justify-between text-sm">
+
+                        <span>
+                          IGST
+                        </span>
+
+                        <strong>
+                          {formatCurrency(
+                            selectedInvoice.igst ||
+                              0
+                          )}
+                        </strong>
+
+                      </div>
+                    )}
 
                     <div className="flex justify-between">
 
                       <span>
-                        Discount
+                        Tax
                       </span>
 
                       <strong>
-
-                        -
-
                         {formatCurrency(
-                          selectedInvoice.discount ||
-                            0
+                          selectedInvoice.tax_amount
                         )}
-
                       </strong>
 
                     </div>
 
-                    {selectedQuotation?.gstType ===
-                      'CGST_SGST' && (
-                      <>
-
-                        <div className="flex justify-between text-sm">
-
-                          <span>
-
-                            CGST (
-                            {
-                              selectedQuotation.gstRate
-                                ? selectedQuotation.gstRate /
-                                  2
-                                : 0
-                            }
-                            %)
-
-                          </span>
-
-                          <strong>
-
-                            {formatCurrency(
-                              selectedQuotation.cgst ||
-                                0
-                            )}
-
-                          </strong>
-
-                        </div>
-
-                        <div className="flex justify-between text-sm">
-
-                          <span>
-
-                            SGST (
-                            {
-                              selectedQuotation.gstRate
-                                ? selectedQuotation.gstRate /
-                                  2
-                                : 0
-                            }
-                            %)
-
-                          </span>
-
-                          <strong>
-
-                            {formatCurrency(
-                              selectedQuotation.sgst ||
-                                0
-                            )}
-
-                          </strong>
-
-                        </div>
-
-                      </>
-                    )}
-
-                    {selectedQuotation?.gstType ===
-                      'IGST' && (
-
-                      <div className="flex justify-between text-sm">
-
-                        <span>
-
-                          IGST (
-                          {
-                            selectedQuotation.gstRate ||
-                            0
-                          }
-                          %)
-
-                        </span>
-
-                        <strong>
-
-                          {formatCurrency(
-                            selectedQuotation.igst ||
-                              0
-                          )}
-
-                        </strong>
-
-                      </div>
-
-                    )}
-
-                    {(!selectedQuotation?.gstType ||
-                      selectedQuotation.gstType ===
-                        'NONE') && (
-
-                      <div className="flex justify-between text-sm">
-
-                        <span>
-                          Tax / GST
-                        </span>
-
-                        <strong>
-
-                          {formatCurrency(
-                            selectedInvoice.tax ||
-                              0
-                          )}
-
-                        </strong>
-
-                      </div>
-
-                    )}
-
-                    <div className="border-t pt-3 flex justify-between text-lg">
+                    <div className="flex justify-between border-t pt-3 text-lg">
 
                       <span className="font-bold">
                         Grand Total
                       </span>
 
                       <strong className="text-[#9a641f]">
-
                         {formatCurrency(
-                          selectedInvoice.grandTotal
+                          selectedInvoice.total_amount
                         )}
-
                       </strong>
 
                     </div>
@@ -3029,25 +2665,23 @@ export default function Invoices() {
 
                 </div>
 
-                {/* PAYMENT */}
+                <div className="mt-6 rounded-xl border p-5">
 
-                <div className="mt-6 border rounded-xl p-5">
-
-                  <h3 className="font-semibold text-[#9a641f] mb-4">
+                  <h3 className="mb-4 font-semibold text-[#9a641f]">
                     Payment
                   </h3>
 
-                  <div className="grid md:grid-cols-3 gap-4">
+                  <div className="grid gap-4 md:grid-cols-3">
 
                     <div>
 
-                      <label className="block text-sm text-gray-500 mb-1">
+                      <label className="mb-1 block text-sm text-gray-500">
                         Payment Status
                       </label>
 
                       <div className="font-semibold">
                         {
-                          selectedInvoice.paymentStatus
+                          selectedInvoice.payment_status
                         }
                       </div>
 
@@ -3055,7 +2689,7 @@ export default function Invoices() {
 
                     <div>
 
-                      <label className="block text-sm text-gray-500 mb-1">
+                      <label className="mb-1 block text-sm text-gray-500">
                         Paid Amount
                       </label>
 
@@ -3070,19 +2704,18 @@ export default function Invoices() {
                           event
                         ) =>
                           setPaidAmountInput(
-                            event
-                              .target
+                            event.target
                               .value
                           )
                         }
-                        className="w-full border rounded-lg px-3 py-2"
+                        className="w-full rounded-lg border px-3 py-2"
                       />
 
                     </div>
 
                     <div>
 
-                      <label className="block text-sm text-gray-500 mb-1">
+                      <label className="mb-1 block text-sm text-gray-500">
                         Balance
                       </label>
 
@@ -3091,7 +2724,7 @@ export default function Invoices() {
                         {formatCurrency(
                           Math.max(
                             Number(
-                              selectedInvoice.grandTotal ||
+                              selectedInvoice.total_amount ||
                                 0
                             ) -
                               Number(
@@ -3112,20 +2745,17 @@ export default function Invoices() {
                     onClick={
                       updatePayment
                     }
-                    className="mt-4 px-5 py-2.5 rounded-lg bg-gray-900 text-white hover:bg-black"
+                    className="mt-4 rounded-lg bg-gray-900 px-5 py-2.5 text-white hover:bg-black"
                   >
                     Update Payment
                   </button>
 
                 </div>
 
-                {/* ACTIONS */}
-
                 <div className="mt-6 flex flex-wrap gap-3">
 
                   {selectedInvoice.status ===
                     'DRAFT' && (
-
                     <button
                       onClick={() =>
                         updateInvoiceStatus(
@@ -3133,16 +2763,14 @@ export default function Invoices() {
                           'SENT'
                         )
                       }
-                      className="px-5 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                      className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700"
                     >
                       Send Invoice
                     </button>
-
                   )}
 
                   {selectedInvoice.status ===
                     'SENT' && (
-
                     <button
                       onClick={() =>
                         updateInvoiceStatus(
@@ -3150,18 +2778,17 @@ export default function Invoices() {
                           'CANCELLED'
                         )
                       }
-                      className="px-5 py-3 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                      className="rounded-lg bg-red-600 px-5 py-3 text-white hover:bg-red-700"
                     >
                       Cancel Invoice
                     </button>
-
                   )}
 
                   <button
                     onClick={
                       printInvoice
                     }
-                    className="px-5 py-3 rounded-lg bg-[#9a641f] text-white hover:bg-[#7e5017]"
+                    className="rounded-lg bg-[#9a641f] px-5 py-3 text-white hover:bg-[#7e5017]"
                   >
                     Print / PDF
                   </button>
@@ -3175,17 +2802,12 @@ export default function Invoices() {
           </div>
         )}
 
-      {/* ===================================================
-          CREATING OVERLAY
-      =================================================== */}
-
       {creating && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
 
-        <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center">
+          <div className="rounded-xl bg-white px-8 py-7 text-center shadow-xl">
 
-          <div className="bg-white rounded-xl px-8 py-7 shadow-xl text-center">
-
-            <div className="text-2xl mb-3">
+            <div className="mb-3 text-2xl">
               🧾
             </div>
 
@@ -3193,14 +2815,13 @@ export default function Invoices() {
               Creating invoice...
             </p>
 
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="mt-1 text-sm text-gray-500">
               Please wait.
             </p>
 
           </div>
 
         </div>
-
       )}
 
     </div>

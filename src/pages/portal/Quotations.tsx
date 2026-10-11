@@ -206,8 +206,9 @@ export default function Quotations() {
         );
       }
 
-      const role = staffData.role?.toUpperCase();    
-      if (role !== 'ADMIN' && role !== 'MANAGER') {
+      const role = staffData.role?.toUpperCase();
+      setStaff(staffData as Staff);    
+      if (role !== 'ADMIN') {
         throw new Error(
           'Quotation management is available only to administrators.'
         );

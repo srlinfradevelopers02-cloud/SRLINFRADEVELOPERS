@@ -1,21 +1,43 @@
-import React from 'react';
+
+import React, { useEffect, useState } from 'react';
 import {
   ArrowUpRight,
   Building2,
   CheckCircle2,
   ShieldCheck,
   Settings2,
+  Package,
+  ShoppingCart,
 } from 'lucide-react';
+
+import { supabase } from '../lib/supabase';
+import { useSharedCart } from './SharedCart';
 
 interface ElevatorSectionProps {
   onRequestQuote: (elevatorName: string) => void;
 }
 
-const ELEVATOR_TYPES = [
-  // =====================================================
-  // PASSENGER LIFTS
-  // =====================================================
+interface ElevatorType {
+  name: string;
+  category: string;
+  description: string;
+  image: string;
+  features: string[];
+}
 
+interface InventoryProduct {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  image_urls: string[];
+  price: number;
+  unit: string;
+  stock_quantity: number;
+  website_cart_limit?: number;
+}
+
+const ELEVATOR_TYPES: ElevatorType[] = [
   {
     name: 'Passenger Lift — Center Opening',
     category: 'Passenger Lifts',
@@ -28,7 +50,6 @@ const ELEVATOR_TYPES = [
       'Residential and commercial applications',
     ],
   },
-
   {
     name: 'Passenger Lift — Telescopic Opening',
     category: 'Passenger Lifts',
@@ -41,11 +62,6 @@ const ELEVATOR_TYPES = [
       'Residential and commercial applications',
     ],
   },
-
-  // =====================================================
-  // HOSPITAL LIFTS
-  // =====================================================
-
   {
     name: 'Hospital Lift — Center Opening',
     category: 'Hospital Lifts',
@@ -58,7 +74,6 @@ const ELEVATOR_TYPES = [
       'Healthcare applications',
     ],
   },
-
   {
     name: 'Hospital Lift — Telescopic Opening',
     category: 'Hospital Lifts',
@@ -71,11 +86,6 @@ const ELEVATOR_TYPES = [
       'Healthcare applications',
     ],
   },
-
-  // =====================================================
-  // OTHER ELEVATORS
-  // =====================================================
-
   {
     name: 'Product Lift',
     category: 'Specialized Lifts',
@@ -88,7 +98,6 @@ const ELEVATOR_TYPES = [
       'Material transportation',
     ],
   },
-
   {
     name: 'Home Lift',
     category: 'Residential Lifts',
@@ -101,7 +110,6 @@ const ELEVATOR_TYPES = [
       'Residential integration',
     ],
   },
-
   {
     name: 'Hydraulic Lift',
     category: 'Specialized Lifts',
@@ -114,7 +122,6 @@ const ELEVATOR_TYPES = [
       'Flexible installation',
     ],
   },
-
   {
     name: 'Capsule Lift',
     category: 'Architectural Lifts',
@@ -127,7 +134,6 @@ const ELEVATOR_TYPES = [
       'Premium cabin experience',
     ],
   },
-
   {
     name: 'Scissor Lift',
     category: 'Specialized Lifts',
@@ -140,7 +146,6 @@ const ELEVATOR_TYPES = [
       'Robust construction',
     ],
   },
-
   {
     name: 'Structure Lift',
     category: 'Specialized Lifts',
@@ -153,7 +158,6 @@ const ELEVATOR_TYPES = [
       'Commercial applications',
     ],
   },
-
   {
     name: 'Automobile Lift',
     category: 'Automobile Lifts',
@@ -168,25 +172,189 @@ const ELEVATOR_TYPES = [
   },
 ];
 
+const formatPrice = (price: number): string =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(price);
+
+const normalizeName = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[—–-]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(elevators?|lifts?)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const findMatchingProduct = (
+  elevator: ElevatorType,
+  products: InventoryProduct[]
+): InventoryProduct | undefined => {
+  const target = normalizeName(elevator.name);
+
+  if (!target) return undefined;
+
+  // 1. Exact name match
+  const exactMatch = products.find(
+    (product) => normalizeName(product.name) === target
+  );
+
+  if (exactMatch) return exactMatch;
+
+  // 2. Match based on meaningful words
+  const targetWords = target
+    .split(' ')
+    .filter((word) => word.length > 2);
+
+  let bestProduct: InventoryProduct | undefined;
+  let bestScore = 0;
+
+  for (const product of products) {
+    const candidate = normalizeName(product.name);
+
+    if (!candidate) continue;
+
+    // Prefer names that contain one another.
+    if (
+      candidate.includes(target) ||
+      target.includes(candidate)
+    ) {
+      const score =
+        Math.min(candidate.length, target.length) /
+        Math.max(candidate.length, target.length);
+
+      if (score > bestScore) {
+        bestProduct = product;
+        bestScore = score;
+      }
+
+      continue;
+    }
+
+    const candidateWords = new Set(
+      candidate.split(' ').filter((word) => word.length > 2)
+    );
+
+    const sharedWords = targetWords.filter((word) =>
+      candidateWords.has(word)
+    );
+
+    // Avoid matching products on just one generic word.
+    if (sharedWords.length < 2) continue;
+
+    const score =
+      sharedWords.length / Math.max(targetWords.length, 1);
+
+    if (score >= 0.6 && score > bestScore) {
+      bestProduct = product;
+      bestScore = score;
+    }
+  }
+
+  return bestProduct;
+};
+
 export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
   onRequestQuote,
 }) => {
+  const { items: sharedCartItems, addItem: addSharedCartItem, setQuantity: setSharedCartQuantity } = useSharedCart();
+  const [inventoryProducts, setInventoryProducts] = useState<
+    InventoryProduct[]
+  >([]);
+
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadProducts = async () => {
+      setProductsLoading(true);
+
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select(
+            'id,name,category,description,image_urls,price,unit,stock_quantity,website_cart_limit'
+          )
+          .eq('is_published', true);
+
+        if (error) {
+          throw error;
+        }
+
+        if (!active) return;
+
+        const products: InventoryProduct[] = (data ?? []).map(
+          (product: any) => {
+            let imageUrls: string[] = [];
+
+            if (Array.isArray(product.image_urls)) {
+              imageUrls = product.image_urls.filter(
+                (url: unknown): url is string =>
+                  typeof url === 'string' &&
+                  url.trim().length > 0
+              );
+            } else if (
+              typeof product.image_urls === 'string' &&
+              product.image_urls.trim()
+            ) {
+              imageUrls = [product.image_urls];
+            }
+
+            return {
+              id: String(product.id),
+              name: String(product.name ?? ''),
+              category: String(product.category ?? ''),
+              description: String(product.description ?? ''),
+              image_urls: imageUrls,
+              price: Math.max(0, Number(product.price) || 0),
+              unit: String(product.unit || 'piece'),
+              stock_quantity: Math.max(
+                0,
+                Number(product.stock_quantity) || 0
+              ),
+              website_cart_limit: Math.max(0, Number(product.website_cart_limit) || 0),
+            };
+          }
+        );
+
+        setInventoryProducts(products);
+      } catch (error) {
+        console.error(
+          'Could not load elevator inventory products:',
+          error
+        );
+
+        if (active) {
+          setInventoryProducts([]);
+        }
+      } finally {
+        if (active) {
+          setProductsLoading(false);
+        }
+      }
+    };
+
+    void loadProducts();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <section
       id="elevators"
       className="relative overflow-hidden bg-[#111111] py-24 sm:py-28"
     >
-      {/* Background effects */}
       <div className="pointer-events-none absolute -top-40 right-[-120px] h-[500px] w-[500px] rounded-full bg-[#C5832B]/10 blur-[140px]" />
 
       <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-
-        {/* =====================================================
-            SECTION HEADER
-        ===================================================== */}
-
+        {/* SECTION HEADER */}
         <div className="mx-auto mb-16 max-w-4xl text-center">
-
           <div className="mb-4 flex items-center justify-center gap-3">
             <span className="h-px w-10 bg-[#C5832B]" />
 
@@ -205,36 +373,26 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
           </h2>
 
           <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-neutral-400 sm:text-lg">
-            Premium elevator and vertical mobility solutions for residential,
-            commercial, healthcare, industrial, and architectural spaces.
+            Premium elevator and vertical mobility solutions for
+            residential, commercial, healthcare, industrial, and
+            architectural spaces.
           </p>
-
         </div>
 
-
-        {/* =====================================================
-            HERO
-        ===================================================== */}
-
+        {/* HERO */}
         <div className="mb-20 overflow-hidden rounded-3xl border border-white/10 bg-[#181818] shadow-2xl">
-
           <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
-
             <div className="relative aspect-video w-full overflow-hidden bg-[#111111]">
-
               <img
                 src="/automation/smartelevator.png"
                 alt="Smart Elevators and Vertical Access"
                 className="absolute inset-0 h-full w-full object-contain"
               />
 
-              <div className="absolute inset-0 bg-gradient-to-r from-black/10 via-transparent to-black/50 pointer-events-none" />
-
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/10 via-transparent to-black/50" />
             </div>
 
-
             <div className="flex flex-col justify-center p-8 sm:p-12 lg:p-14">
-
               <div className="mb-7 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#C5832B]/30 bg-[#C5832B]/10">
                 <Building2 className="h-7 w-7 text-[#C5832B]" />
               </div>
@@ -244,13 +402,12 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
               </h3>
 
               <p className="mt-5 leading-8 text-neutral-400">
-                Explore passenger lifts, hospital lifts, residential lifts,
-                automobile lifts, and specialized vertical transportation
-                systems designed for modern buildings.
+                Explore passenger lifts, hospital lifts, residential
+                lifts, automobile lifts, and specialized vertical
+                transportation systems designed for modern buildings.
               </p>
 
               <div className="mt-8 grid gap-4 sm:grid-cols-2">
-
                 <div className="flex items-start gap-3">
                   <ShieldCheck className="mt-1 h-5 w-5 shrink-0 text-[#C5832B]" />
 
@@ -260,11 +417,11 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
                     </p>
 
                     <p className="mt-1 text-sm text-neutral-500">
-                      Designed around reliable operation and controlled access.
+                      Designed around reliable operation and controlled
+                      access.
                     </p>
                   </div>
                 </div>
-
 
                 <div className="flex items-start gap-3">
                   <Settings2 className="mt-1 h-5 w-5 shrink-0 text-[#C5832B]" />
@@ -279,21 +436,13 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
                     </p>
                   </div>
                 </div>
-
               </div>
-
             </div>
-
           </div>
         </div>
 
-
-        {/* =====================================================
-            ELEVATOR PRODUCTS
-        ===================================================== */}
-
+        {/* PRODUCTS HEADER */}
         <div className="mb-10">
-
           <span className="font-montserrat text-xs font-bold uppercase tracking-[0.2em] text-[#C5832B]">
             OUR ELEVATOR RANGE
           </span>
@@ -302,110 +451,199 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
             Vertical Solutions for Every Space
           </h3>
 
+          <p className="mt-3 text-sm text-neutral-400">
+            {productsLoading
+              ? 'Loading inventory prices...'
+              : 'Product prices and availability are based on published inventory records.'}
+          </p>
         </div>
 
-
-        {/* =====================================================
-            PRODUCT GRID
-        ===================================================== */}
-
+        {/* ELEVATOR PRODUCT CARDS */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {ELEVATOR_TYPES.map((elevator) => {
+            const inventoryProduct = findMatchingProduct(
+              elevator,
+              inventoryProducts
+            );
 
-          {ELEVATOR_TYPES.map((elevator) => (
+            const inventoryImage =
+              inventoryProduct?.image_urls?.[0];
 
-            <article
-              key={`${elevator.category}-${elevator.name}`}
-              className="group overflow-hidden rounded-2xl border border-white/10 bg-[#181818] transition-all duration-300 hover:-translate-y-1 hover:border-[#C5832B]/40"
-            >
+            const displayedImage =
+              inventoryImage || elevator.image;
 
-              {/* IMAGE */}
+            return (
+              <article
+                key={`${elevator.category}-${elevator.name}`}
+                className="group overflow-hidden rounded-2xl border border-white/10 bg-[#181818] transition-all duration-300 hover:-translate-y-1 hover:border-[#C5832B]/40"
+              >
+                {/* IMAGE */}
+                <div className="relative h-64 overflow-hidden bg-white">
+                  <img
+                    src={displayedImage}
+                    alt={elevator.name}
+                    loading="lazy"
+                    onError={(event) => {
+                      const img = event.currentTarget;
 
-              <div className="relative h-64 overflow-hidden bg-white">
+                      if (
+                        inventoryImage &&
+                        img.src !==
+                          new URL(
+                            elevator.image,
+                            window.location.origin
+                          ).href
+                      ) {
+                        img.src = elevator.image;
+                      }
+                    }}
+                    className="h-full w-full object-contain p-5 transition-transform duration-500 group-hover:scale-105"
+                  />
 
-                <img
-                  src={elevator.image}
-                  alt={elevator.name}
-                  className="h-full w-full object-contain p-5 transition-transform duration-500 group-hover:scale-105"
-                />
-
-                <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-black/70 px-3 py-1.5 backdrop-blur-md">
-
-                  <span className="font-montserrat text-[10px] font-bold uppercase tracking-wider text-[#C5832B]">
-                    {elevator.category}
-                  </span>
-
+                  <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-black/70 px-3 py-1.5 backdrop-blur-md">
+                    <span className="font-montserrat text-[10px] font-bold uppercase tracking-wider text-[#C5832B]">
+                      {elevator.category}
+                    </span>
+                  </div>
                 </div>
 
-              </div>
+                {/* PRODUCT DETAILS */}
+                <div className="p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <h4 className="font-montserrat text-xl font-bold text-white">
+                      {elevator.name}
+                    </h4>
 
+                    <ArrowUpRight className="h-5 w-5 shrink-0 text-[#C5832B]" />
+                  </div>
 
-              {/* CONTENT */}
+                  <p className="mt-3 text-sm leading-6 text-neutral-400">
+                    {elevator.description}
+                  </p>
 
-              <div className="p-6">
+                  {/* LIVE INVENTORY PRICE */}
+                  <div className="mt-5 rounded-xl border border-[#C5832B]/20 bg-[#C5832B]/5 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                      Price
+                    </p>
 
-                <div className="flex items-start justify-between gap-4">
+                    {productsLoading ? (
+                      <p className="mt-1 text-sm text-neutral-300">
+                        Loading price...
+                      </p>
+                    ) : inventoryProduct ? (
+                      <>
+                        <p className="mt-1 text-2xl font-bold text-[#C5832B]">
+                          {formatPrice(inventoryProduct.price)}
 
-                  <h4 className="font-montserrat text-xl font-bold text-white">
-                    {elevator.name}
-                  </h4>
+                          <span className="ml-1 text-sm font-medium text-neutral-400">
+                            / {inventoryProduct.unit}
+                          </span>
+                        </p>
 
-                  <ArrowUpRight className="h-5 w-5 shrink-0 text-[#C5832B]" />
+                        <div className="mt-3 flex items-center gap-2 text-sm">
+                          <Package className="h-4 w-4 text-[#C5832B]" />
 
-                </div>
+                          <span className="text-neutral-300">
+                            Stock available:
+                          </span>
 
+                          <span
+                            className={
+                              inventoryProduct.stock_quantity > 0
+                                ? 'font-semibold text-green-400'
+                                : 'font-semibold text-red-400'
+                            }
+                          >
+                            {inventoryProduct.stock_quantity > 0
+                              ? inventoryProduct.stock_quantity
+                              : 'Out of stock'}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-lg font-semibold text-[#C5832B]">
+                        Price on Request
+                      </p>
+                    )}
+                  </div>
 
-                <p className="mt-3 text-sm leading-6 text-neutral-400">
-                  {elevator.description}
-                </p>
-
-
-                <div className="mt-5 space-y-2.5">
-
-                  {elevator.features.map((feature) => (
-
-                    <div
-                      key={feature}
-                      className="flex items-center gap-2.5 text-sm text-neutral-300"
-                    >
-
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[#C5832B]" />
-
-                      <span>
-                        {feature}
-                      </span>
-
+                  {/* SHARED CART: only available when a real published inventory product matches */}
+                  {inventoryProduct && (
+                    <div className="mt-4 flex items-center gap-2">
+                      {(() => {
+                        const sharedQuantity =
+                          sharedCartItems.find((item) => item.id === inventoryProduct.id)?.quantity ?? 0;
+                        const cartLimit = Math.min(
+                          inventoryProduct.stock_quantity,
+                          Math.max(0, Number(inventoryProduct.website_cart_limit ?? inventoryProduct.stock_quantity) || 0)
+                        );
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              aria-label={`Decrease ${inventoryProduct.name} quantity`}
+                              disabled={sharedQuantity <= 0}
+                              onClick={() => setSharedCartQuantity(inventoryProduct.id, sharedQuantity - 1)}
+                              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/15 text-white disabled:opacity-40"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-6 text-center font-semibold text-white">{sharedQuantity}</span>
+                            <button
+                              type="button"
+                              aria-label={`Add ${inventoryProduct.name} to shared cart`}
+                              disabled={cartLimit < 1 || sharedQuantity >= cartLimit}
+                              onClick={() => addSharedCartItem({
+                                id: inventoryProduct.id,
+                                name: inventoryProduct.name,
+                                category: inventoryProduct.category || 'Elevators',
+                                price: inventoryProduct.price,
+                                unit: inventoryProduct.unit,
+                                stock_quantity: inventoryProduct.stock_quantity,
+                                website_cart_limit: cartLimit,
+                              })}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#C5832B] px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-40"
+                            >
+                              <ShoppingCart className="h-4 w-4" />
+                              Add to Shared Cart
+                            </button>
+                          </>
+                        );
+                      })()}
                     </div>
+                  )}
 
-                  ))}
+                  {/* FEATURES */}
+                  <div className="mt-5 space-y-2.5">
+                    {elevator.features.map((feature) => (
+                      <div
+                        key={feature}
+                        className="flex items-center gap-2.5 text-sm text-neutral-300"
+                      >
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-[#C5832B]" />
 
+                        <span>{feature}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ENQUIRY */}
+                  <button
+                    onClick={() => onRequestQuote(elevator.name)}
+                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-3 font-montserrat text-xs font-bold tracking-wider text-white transition-all hover:border-[#C5832B]/50 hover:bg-[#C5832B]/10 hover:text-[#C5832B]"
+                  >
+                    ENQUIRE
+                    <ArrowUpRight className="h-4 w-4" />
+                  </button>
                 </div>
-
-
-                <button
-                  onClick={() => onRequestQuote(elevator.name)}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-3 font-montserrat text-xs font-bold tracking-wider text-white transition-all hover:border-[#C5832B]/50 hover:bg-[#C5832B]/10 hover:text-[#C5832B]"
-                >
-                  ENQUIRE
-
-                  <ArrowUpRight className="h-4 w-4" />
-
-                </button>
-
-              </div>
-
-            </article>
-
-          ))}
-
+              </article>
+            );
+          })}
         </div>
 
-
-        {/* =====================================================
-            BOTTOM CTA
-        ===================================================== */}
-
+        {/* BOTTOM CTA */}
         <div className="mt-16 rounded-2xl border border-[#C5832B]/20 bg-[#C5832B]/5 p-8 text-center sm:p-10">
-
           <p className="font-montserrat text-xs font-bold uppercase tracking-[0.2em] text-[#C5832B]">
             COMPLETE VERTICAL MOBILITY
           </p>
@@ -416,8 +654,8 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
 
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-neutral-400">
             Tell us about your building and elevator requirements.
-            Our team can help identify the appropriate vertical mobility
-            solution for your project.
+            Our team can help identify the appropriate vertical
+            mobility solution for your project.
           </p>
 
           <button
@@ -426,9 +664,7 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
           >
             START AN ELEVATOR PROJECT
           </button>
-
         </div>
-
       </div>
     </section>
   );

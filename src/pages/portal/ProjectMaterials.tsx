@@ -406,7 +406,7 @@ export default function ProjectMaterials() {
               </button>
 
               <p className="text-xs leading-5 text-slate-500">
-                Only authenticated Admin and Manager accounts authorized by
+                Only authenticated Admin accounts authorized by
                 the database function can issue materials. The database
                 validates available stock before deducting it.
               </p>

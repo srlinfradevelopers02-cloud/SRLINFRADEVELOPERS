@@ -1,12 +1,11 @@
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import {
   AlertCircle,
   ArrowDownToLine,
   ArrowUpFromLine,
   Boxes,
   CheckCircle2,
-  Clock3,
   Loader2,
   PackagePlus,
   RefreshCw,
@@ -14,9 +13,11 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import ProductCatalog from './ProductCatalog';
 
 type Category = 'INTERIOR' | 'AUTOMATION' | 'ELEVATORS' | 'OTHER';
 type MovementType = 'RECEIVE' | 'ISSUE' | 'ADJUSTMENT';
+type Tab = 'ITEMS' | 'HISTORY' | 'CATALOG';
 
 type InventoryItem = {
   id: number;
@@ -66,17 +67,8 @@ const CATEGORIES: Category[] = [
 ];
 
 const UNITS = [
-  'PCS',
-  'BOX',
-  'SHEET',
-  'SQFT',
-  'SQM',
-  'METER',
-  'KG',
-  'LITER',
-  'SET',
-  'ROLL',
-  'PAIR',
+  'PCS', 'BOX', 'SHEET', 'SQFT', 'SQM', 'METER',
+  'KG', 'LITER', 'SET', 'ROLL', 'PAIR',
 ];
 
 const EMPTY_PRODUCT = {
@@ -105,17 +97,12 @@ const EMPTY_MOVEMENT = {
 const inputClass =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
 
-const cardClass =
-  'rounded-xl border border-slate-200 bg-white p-4 shadow-sm';
+const cardClass = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm';
 
 function messageOf(error: unknown): string {
   if (error instanceof Error) return error.message;
 
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error
-  ) {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
     return String(error.message);
   }
 
@@ -151,7 +138,7 @@ export default function Inventory() {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [stockFilter, setStockFilter] = useState('ALL');
 
-  const [activeTab, setActiveTab] = useState<'ITEMS' | 'HISTORY'>('ITEMS');
+  const [activeTab, setActiveTab] = useState<Tab>('ITEMS');
   const [showProductForm, setShowProductForm] = useState(false);
   const [showMovementForm, setShowMovementForm] = useState(false);
 
@@ -160,7 +147,7 @@ export default function Inventory() {
   const [movementForm, setMovementForm] = useState({ ...EMPTY_MOVEMENT });
 
   const role = currentStaff?.role?.toUpperCase();
-  const canManage = role === 'ADMIN' || role === 'MANAGER';
+  const canManage = role === 'ADMIN';
   const isAdmin = role === 'ADMIN';
 
   const loadData = useCallback(async () => {
@@ -193,7 +180,6 @@ export default function Inventory() {
           .from('inventory_items')
           .select('*')
           .order('product_name', { ascending: true }),
-
         supabase
           .from('stock_movements')
           .select('*')
@@ -289,13 +275,13 @@ export default function Inventory() {
     setShowProductForm(true);
   }
 
-  async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
+  async function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setSuccess('');
 
     if (!canManage) {
-      setError('Only Admin or Manager can manage inventory products.');
+      setError('Only Admin can manage inventory products.');
       return;
     }
 
@@ -303,10 +289,7 @@ export default function Inventory() {
     const purchasePrice = Number(productForm.purchase_price);
     const sellingPrice = Number(productForm.selling_price);
 
-    if (
-      !productForm.sku.trim() ||
-      !productForm.product_name.trim()
-    ) {
+    if (!productForm.sku.trim() || !productForm.product_name.trim()) {
       setError('SKU and product name are required.');
       return;
     }
@@ -348,7 +331,6 @@ export default function Inventory() {
           .eq('id', editingProduct.id);
 
         if (updateError) throw updateError;
-
         setSuccess('Product details updated. Stock quantity was not changed.');
       } else {
         const { error: insertError } = await supabase
@@ -360,7 +342,6 @@ export default function Inventory() {
           });
 
         if (insertError) throw insertError;
-
         setSuccess('Product added. Record an opening stock receipt to add quantity.');
       }
 
@@ -386,13 +367,13 @@ export default function Inventory() {
     setShowMovementForm(true);
   }
 
-  async function saveMovement(event: React.FormEvent<HTMLFormElement>) {
+  async function saveMovement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setSuccess('');
 
     if (!canManage) {
-      setError('Only Admin or Manager can record stock movements.');
+      setError('Only Admin can record stock movements.');
       return;
     }
 
@@ -484,13 +465,12 @@ export default function Inventory() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Page header */}
         <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
               <Boxes className="h-7 w-7 text-blue-700" />
               <h1 className="text-2xl font-bold text-slate-900">
-                Stock & Inventory
+                Stock &amp; Inventory
               </h1>
             </div>
             <p className="mt-1 text-sm text-slate-500">
@@ -524,7 +504,6 @@ export default function Inventory() {
                   <ArrowDownToLine className="h-4 w-4" />
                   Stock Movement
                 </button>
-
                 <button
                   type="button"
                   onClick={startNewProduct}
@@ -538,7 +517,6 @@ export default function Inventory() {
           </div>
         </header>
 
-        {/* Notifications */}
         {error && (
           <div
             role="alert"
@@ -575,7 +553,6 @@ export default function Inventory() {
           </div>
         )}
 
-        {/* Summary */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {[
             { label: 'Active Products', value: stats.products, icon: Boxes },
@@ -592,7 +569,6 @@ export default function Inventory() {
             },
           ].map((stat) => {
             const Icon = stat.icon;
-
             return (
               <div key={stat.label} className={cardClass}>
                 <div className="flex items-center justify-between gap-2">
@@ -609,8 +585,8 @@ export default function Inventory() {
           })}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 border-b border-slate-200">
+        {/* Inventory tabs */}
+        <div className="flex flex-wrap gap-2 border-b border-slate-200">
           <button
             type="button"
             onClick={() => setActiveTab('ITEMS')}
@@ -634,8 +610,23 @@ export default function Inventory() {
           >
             Stock History
           </button>
+
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('CATALOG')}
+              className={`border-b-2 px-4 py-3 text-sm font-semibold ${
+                activeTab === 'CATALOG'
+                  ? 'border-blue-700 text-blue-700'
+                  : 'border-transparent text-slate-500'
+              }`}
+            >
+              Product Photos
+            </button>
+          )}
         </div>
 
+        {/* Inventory products */}
         {activeTab === 'ITEMS' && (
           <section className={`${cardClass} space-y-4`}>
             <div className="grid gap-3 md:grid-cols-3">
@@ -717,7 +708,6 @@ export default function Inventory() {
                       <th className="px-3 py-3 font-semibold">Actions</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {filteredItems.map((item) => {
                       const lowStock =
@@ -741,13 +731,11 @@ export default function Inventory() {
                               </p>
                             )}
                           </td>
-
                           <td className="px-3 py-4">
                             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
                               {item.category}
                             </span>
                           </td>
-
                           <td className="px-3 py-4">
                             <p
                               className={`font-bold ${
@@ -763,19 +751,15 @@ export default function Inventory() {
                               </p>
                             )}
                           </td>
-
                           <td className="px-3 py-4 text-slate-600">
                             {Number(item.minimum_stock)} {item.unit}
                           </td>
-
                           <td className="px-3 py-4 text-slate-700">
                             {money(item.purchase_price)}
                           </td>
-
                           <td className="px-3 py-4 text-slate-700">
                             {money(item.selling_price)}
                           </td>
-
                           <td className="px-3 py-4 text-slate-600">
                             <p>{item.supplier_name || '—'}</p>
                             {item.supplier_phone && (
@@ -784,7 +768,6 @@ export default function Inventory() {
                               </p>
                             )}
                           </td>
-
                           <td className="px-3 py-4">
                             {canManage ? (
                               <div className="flex flex-wrap gap-2">
@@ -796,7 +779,6 @@ export default function Inventory() {
                                 >
                                   <ArrowDownToLine className="h-4 w-4" />
                                 </button>
-
                                 <button
                                   type="button"
                                   onClick={() => startMovement(item, 'ISSUE')}
@@ -805,7 +787,6 @@ export default function Inventory() {
                                 >
                                   <ArrowUpFromLine className="h-4 w-4" />
                                 </button>
-
                                 <button
                                   type="button"
                                   onClick={() => startEditProduct(item)}
@@ -813,7 +794,6 @@ export default function Inventory() {
                                 >
                                   Edit
                                 </button>
-
                                 {isAdmin && (
                                   <button
                                     type="button"
@@ -847,6 +827,7 @@ export default function Inventory() {
           </section>
         )}
 
+        {/* Stock history */}
         {activeTab === 'HISTORY' && (
           <section className={`${cardClass} space-y-4`}>
             <div>
@@ -880,7 +861,6 @@ export default function Inventory() {
                       <th className="px-3 py-3">Reference / Notes</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {movements.map((movement) => (
                       <tr
@@ -890,11 +870,9 @@ export default function Inventory() {
                         <td className="whitespace-nowrap px-3 py-4 text-slate-600">
                           {dateTime(movement.created_at)}
                         </td>
-
                         <td className="px-3 py-4 font-medium text-slate-800">
                           {itemName(movement.item_id)}
                         </td>
-
                         <td className="px-3 py-4">
                           <span
                             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -908,19 +886,15 @@ export default function Inventory() {
                             {movement.movement_type}
                           </span>
                         </td>
-
                         <td className="px-3 py-4 font-semibold text-slate-800">
                           {Number(movement.quantity).toLocaleString('en-IN')}
                         </td>
-
                         <td className="px-3 py-4 text-slate-600">
                           {Number(movement.quantity_before).toLocaleString('en-IN')}
                         </td>
-
                         <td className="px-3 py-4 font-semibold text-slate-800">
                           {Number(movement.quantity_after).toLocaleString('en-IN')}
                         </td>
-
                         <td className="px-3 py-4">
                           <p className="text-slate-700">
                             {movement.reference || '—'}
@@ -939,461 +913,457 @@ export default function Inventory() {
             )}
           </section>
         )}
-      </div>
 
-      {/* Product modal */}
-      {showProductForm && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
-          <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 p-5">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  {editingProduct ? 'Edit Product' : 'Add Inventory Product'}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  New products start with zero stock.
-                </p>
-              </div>
+        {/* Product photos catalog — Admin only */}
+        {activeTab === 'CATALOG' && canManage && (
+          <section className="space-y-4">
+            <ProductCatalog />
+          </section>
+        )}
 
-              <button
-                type="button"
-                onClick={() => setShowProductForm(false)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                aria-label="Close product form"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={saveProduct} className="space-y-4 p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
+        {/* Add/Edit product modal */}
+        {showProductForm && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+            <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 p-5">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    SKU / Product code *
-                  </label>
-                  <input
-                    className={inputClass}
-                    required
-                    maxLength={80}
-                    value={productForm.sku}
-                    onChange={(event) =>
-                      setProductForm({ ...productForm, sku: event.target.value })
-                    }
-                    placeholder="e.g. INT-PNL-001"
-                  />
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {editingProduct ? 'Edit Product' : 'Add Inventory Product'}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    New products start with zero stock.
+                  </p>
                 </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Product name *
-                  </label>
-                  <input
-                    className={inputClass}
-                    required
-                    maxLength={200}
-                    value={productForm.product_name}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        product_name: event.target.value,
-                      })
-                    }
-                    placeholder="e.g. Polygranite Sheet"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Category
-                  </label>
-                  <select
-                    className={inputClass}
-                    value={productForm.category}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        category: event.target.value as Category,
-                      })
-                    }
-                  >
-                    {CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Unit
-                  </label>
-                  <select
-                    className={inputClass}
-                    value={productForm.unit}
-                    onChange={(event) =>
-                      setProductForm({ ...productForm, unit: event.target.value })
-                    }
-                  >
-                    {UNITS.map((unit) => (
-                      <option key={unit} value={unit}>
-                        {unit}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Minimum stock alert
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    className={inputClass}
-                    value={productForm.minimum_stock}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        minimum_stock: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Purchase price (₹ / unit)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className={inputClass}
-                    value={productForm.purchase_price}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        purchase_price: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Selling price (₹ / unit)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className={inputClass}
-                    value={productForm.selling_price}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        selling_price: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Supplier name
-                  </label>
-                  <input
-                    className={inputClass}
-                    maxLength={200}
-                    value={productForm.supplier_name}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        supplier_name: event.target.value,
-                      })
-                    }
-                    placeholder="Supplier / vendor"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Supplier phone
-                  </label>
-                  <input
-                    className={inputClass}
-                    maxLength={30}
-                    value={productForm.supplier_phone}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        supplier_phone: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Storage location
-                  </label>
-                  <input
-                    className={inputClass}
-                    maxLength={200}
-                    value={productForm.storage_location}
-                    onChange={(event) =>
-                      setProductForm({
-                        ...productForm,
-                        storage_location: event.target.value,
-                      })
-                    }
-                    placeholder="Warehouse / rack"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  maxLength={3000}
-                  className={inputClass}
-                  value={productForm.description}
-                  onChange={(event) =>
-                    setProductForm({
-                      ...productForm,
-                      description: event.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setShowProductForm(false)}
-                  disabled={saving}
-                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  aria-label="Close product form"
                 >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {saving
-                    ? 'Saving...'
-                    : editingProduct
-                      ? 'Save Product'
-                      : 'Add Product'}
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Stock movement modal */}
-      {showMovementForm && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
-          <div className="my-auto w-full max-w-xl rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 p-5">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  Record Stock Movement
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Every movement is recorded in the stock history.
-                </p>
-              </div>
+              <form onSubmit={saveProduct} className="space-y-4 p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      SKU / Product code *
+                    </label>
+                    <input
+                      className={inputClass}
+                      required
+                      maxLength={80}
+                      value={productForm.sku}
+                      onChange={(event) =>
+                        setProductForm({ ...productForm, sku: event.target.value })
+                      }
+                      placeholder="e.g. INT-PNL-001"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Product name *
+                    </label>
+                    <input
+                      className={inputClass}
+                      required
+                      maxLength={200}
+                      value={productForm.product_name}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          product_name: event.target.value,
+                        })
+                      }
+                      placeholder="e.g. Polygranite Sheet"
+                    />
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setShowMovementForm(false)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                aria-label="Close stock movement form"
-              >
-                <X className="h-5 w-5" />
-              </button>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Category
+                    </label>
+                    <select
+                      className={inputClass}
+                      value={productForm.category}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          category: event.target.value as Category,
+                        })
+                      }
+                    >
+                      {CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Unit
+                    </label>
+                    <select
+                      className={inputClass}
+                      value={productForm.unit}
+                      onChange={(event) =>
+                        setProductForm({ ...productForm, unit: event.target.value })
+                      }
+                    >
+                      {UNITS.map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Minimum stock alert
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      className={inputClass}
+                      value={productForm.minimum_stock}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          minimum_stock: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Purchase price (₹ / unit)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className={inputClass}
+                      value={productForm.purchase_price}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          purchase_price: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Selling price (₹ / unit)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className={inputClass}
+                      value={productForm.selling_price}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          selling_price: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Supplier name
+                    </label>
+                    <input
+                      className={inputClass}
+                      maxLength={200}
+                      value={productForm.supplier_name}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          supplier_name: event.target.value,
+                        })
+                      }
+                      placeholder="Supplier / vendor"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Supplier phone
+                    </label>
+                    <input
+                      className={inputClass}
+                      maxLength={30}
+                      value={productForm.supplier_phone}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          supplier_phone: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Storage location
+                    </label>
+                    <input
+                      className={inputClass}
+                      maxLength={200}
+                      value={productForm.storage_location}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          storage_location: event.target.value,
+                        })
+                      }
+                      placeholder="Warehouse / rack"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    maxLength={3000}
+                    className={inputClass}
+                    value={productForm.description}
+                    onChange={(event) =>
+                      setProductForm({
+                        ...productForm,
+                        description: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowProductForm(false)}
+                    disabled={saving}
+                    className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {saving
+                      ? 'Saving...'
+                      : editingProduct
+                        ? 'Save Product'
+                        : 'Add Product'}
+                  </button>
+                </div>
+              </form>
             </div>
+          </div>
+        )}
 
-            <form onSubmit={saveMovement} className="space-y-4 p-5">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Product *
-                </label>
-                <select
-                  className={inputClass}
-                  required
-                  value={movementForm.item_id}
-                  onChange={(event) => {
-                    const selected = items.find(
-                      (item) => item.id === Number(event.target.value),
-                    );
-
-                    setMovementForm({
-                      ...movementForm,
-                      item_id: event.target.value,
-                      unit_cost: selected
-                        ? String(selected.purchase_price)
-                        : movementForm.unit_cost,
-                    });
-                  }}
-                >
-                  <option value="">Select product</option>
-                  {items
-                    .filter((item) => item.is_active)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.sku} — {item.product_name} (Available: {item.quantity} {item.unit})
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Movement type *
-                </label>
-                <select
-                  className={inputClass}
-                  value={movementForm.movement_type}
-                  onChange={(event) =>
-                    setMovementForm({
-                      ...movementForm,
-                      movement_type: event.target.value as MovementType,
-                    })
-                  }
-                >
-                  <option value="RECEIVE">Receive stock — add quantity</option>
-                  <option value="ISSUE">Issue stock — deduct quantity</option>
-                  <option value="ADJUSTMENT">Adjust stock — set actual balance</option>
-                </select>
-                {movementForm.movement_type === 'ADJUSTMENT' && (
-                  <p className="mt-1 text-xs text-amber-700">
-                    For adjustment, enter the new total stock balance, not the difference.
+        {/* Stock movement modal */}
+        {showMovementForm && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+            <div className="my-auto w-full max-w-xl rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 p-5">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Record Stock Movement
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Every movement is recorded in the stock history.
                   </p>
-                )}
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    {movementForm.movement_type === 'ADJUSTMENT'
-                      ? 'New total stock balance *'
-                      : 'Quantity *'}
-                  </label>
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    required
-                    className={inputClass}
-                    value={movementForm.quantity}
-                    onChange={(event) =>
-                      setMovementForm({
-                        ...movementForm,
-                        quantity: event.target.value,
-                      })
-                    }
-                  />
                 </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Unit cost (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className={inputClass}
-                    value={movementForm.unit_cost}
-                    onChange={(event) =>
-                      setMovementForm({
-                        ...movementForm,
-                        unit_cost: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Reference
-                </label>
-                <input
-                  className={inputClass}
-                  maxLength={200}
-                  value={movementForm.reference}
-                  onChange={(event) =>
-                    setMovementForm({
-                      ...movementForm,
-                      reference: event.target.value,
-                    })
-                  }
-                  placeholder="Purchase invoice, project code, issue slip..."
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Notes
-                </label>
-                <textarea
-                  rows={3}
-                  maxLength={3000}
-                  className={inputClass}
-                  value={movementForm.notes}
-                  onChange={(event) =>
-                    setMovementForm({
-                      ...movementForm,
-                      notes: event.target.value,
-                    })
-                  }
-                  placeholder="Reason for receipt, issue or adjustment..."
-                />
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setShowMovementForm(false)}
-                  disabled={saving}
-                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  aria-label="Close stock movement form"
                 >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {saving ? 'Saving...' : 'Save Movement'}
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={saveMovement} className="space-y-4 p-5">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Product *
+                  </label>
+                  <select
+                    className={inputClass}
+                    required
+                    value={movementForm.item_id}
+                    onChange={(event) => {
+                      const selected = items.find(
+                        (item) => item.id === Number(event.target.value),
+                      );
+                      setMovementForm({
+                        ...movementForm,
+                        item_id: event.target.value,
+                        unit_cost: selected
+                          ? String(selected.purchase_price)
+                          : movementForm.unit_cost,
+                      });
+                    }}
+                  >
+                    <option value="">Select product</option>
+                    {items
+                      .filter((item) => item.is_active)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.sku} — {item.product_name} (Available: {item.quantity} {item.unit})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Movement type *
+                  </label>
+                  <select
+                    className={inputClass}
+                    value={movementForm.movement_type}
+                    onChange={(event) =>
+                      setMovementForm({
+                        ...movementForm,
+                        movement_type: event.target.value as MovementType,
+                      })
+                    }
+                  >
+                    <option value="RECEIVE">Receive stock — add quantity</option>
+                    <option value="ISSUE">Issue stock — deduct quantity</option>
+                    <option value="ADJUSTMENT">Adjust stock — set actual balance</option>
+                  </select>
+                  {movementForm.movement_type === 'ADJUSTMENT' && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      For adjustment, enter the new total stock balance, not the difference.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      {movementForm.movement_type === 'ADJUSTMENT'
+                        ? 'New total stock balance *'
+                        : 'Quantity *'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      required
+                      className={inputClass}
+                      value={movementForm.quantity}
+                      onChange={(event) =>
+                        setMovementForm({
+                          ...movementForm,
+                          quantity: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Unit cost (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className={inputClass}
+                      value={movementForm.unit_cost}
+                      onChange={(event) =>
+                        setMovementForm({
+                          ...movementForm,
+                          unit_cost: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Reference
+                  </label>
+                  <input
+                    className={inputClass}
+                    maxLength={200}
+                    value={movementForm.reference}
+                    onChange={(event) =>
+                      setMovementForm({
+                        ...movementForm,
+                        reference: event.target.value,
+                      })
+                    }
+                    placeholder="Purchase invoice, project code, issue slip..."
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    maxLength={3000}
+                    className={inputClass}
+                    value={movementForm.notes}
+                    onChange={(event) =>
+                      setMovementForm({
+                        ...movementForm,
+                        notes: event.target.value,
+                      })
+                    }
+                    placeholder="Reason for receipt, issue or adjustment..."
+                  />
+                </div>
+
+                <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowMovementForm(false)}
+                    disabled={saving}
+                    className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {saving ? 'Saving...' : 'Save Movement'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

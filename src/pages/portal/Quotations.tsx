@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 type Lead = {
-  id: number;
-  client_name?: string;
-  company_name?: string;
+  id: string;
+  client_code?: string;
+  name?: string;
+  company?: string;
   phone?: string;
   email?: string;
   project_type?: string;
+  client_type?: string;
   project_location?: string;
   city?: string;
   state?: string;
@@ -240,12 +242,16 @@ export default function Quotations() {
         }),
 
       supabase
-        .from('leads')
+        .from('clients')
         .select('*')
         .order('created_at', {
           ascending: false,
         }),
     ]);
+    console.log('Leads data:', leadData);
+    console.log('Leads error:', leadError);
+    console.log('Quotation data:', quotationData);
+    console.log('Quotation error:', quotationError);
 
     if (quotationError) throw quotationError;
     if (leadError) throw leadError;
@@ -299,9 +305,9 @@ export default function Quotations() {
     }
 
     return (
-      lead.client_name ||
-      lead.company_name ||
-      `Lead #${lead.id}`
+      lead.name ||
+      lead.company ||
+      `Client ${lead.client_code ?? lead.id}`
     );
   };
 
@@ -463,10 +469,10 @@ export default function Quotations() {
             quotation.quotation_number
               ?.toLowerCase()
               .includes(query) ||
-            lead?.client_name
+            lead?.name
               ?.toLowerCase()
               .includes(query) ||
-            lead?.company_name
+            lead?.company
               ?.toLowerCase()
               .includes(query) ||
             lead?.phone
@@ -1472,8 +1478,8 @@ td {
     <p>
       <strong>Name:</strong>
       ${escapeHtml(
-        lead?.client_name ||
-          lead?.company_name ||
+        lead?.name ||
+          lead?.company ||
           '—'
       )}
     </p>
@@ -1481,7 +1487,7 @@ td {
     <p>
       <strong>Company:</strong>
       ${escapeHtml(
-        lead?.company_name ||
+        lead?.company ||
           '—'
       )}
     </p>
@@ -2098,8 +2104,8 @@ window.onload = function() {
                           <td className="px-5 py-4">
 
                             <p className="font-medium">
-                              {lead?.client_name ||
-                                lead?.company_name ||
+                              {lead?.name ||
+                                lead?.company ||
                                 'Unknown'}
                             </p>
 
@@ -2283,8 +2289,8 @@ window.onload = function() {
                           value={lead.id}
                         >
                           #{lead.id} —{' '}
-                          {lead.client_name ||
-                            lead.company_name ||
+                          {lead.name ||
+                            lead.company ||
                             'Unknown'}
                           {lead.project_type
                             ? ` — ${lead.project_type}`
@@ -2863,8 +2869,8 @@ window.onload = function() {
                             }
                           >
                             #{lead.id} —{' '}
-                            {lead.client_name ||
-                              lead.company_name ||
+                            {lead.name ||
+                              lead.company ||
                               'Unknown'}
                           </option>
                         )
@@ -3482,7 +3488,7 @@ window.onload = function() {
                             <strong>
                               Name:
                             </strong>{' '}
-                            {lead?.client_name ||
+                            {lead?.name ||
                               '—'}
                           </p>
 
@@ -3490,7 +3496,7 @@ window.onload = function() {
                             <strong>
                               Company:
                             </strong>{' '}
-                            {lead?.company_name ||
+                            {lead?.company ||
                               '—'}
                           </p>
 

@@ -321,7 +321,8 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                   src={currentCategory.heroImage}
                   alt={currentCategory.name}
                   className="block w-full h-auto"
-                  loading="eager"
+                  loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                 />
 
@@ -444,7 +445,7 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                   <article key={product.id} className="group bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-lg hover:border-[#C5832B]/50 transition-all duration-300">
                     <div className="relative w-full aspect-[4/3] bg-[#F8F9FA] border-b border-neutral-200 overflow-hidden flex items-center justify-center p-3 sm:p-4">
                       {image ? (
-                        <img src={image} alt={product.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-[1.03]" loading="eager" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                        <img src={image} alt={product.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-[1.03]" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
                       ) : (
                         <div className="text-center px-5"><Smartphone className="w-10 h-10 mx-auto text-neutral-300 mb-2" /><span className="text-xs text-neutral-400">Product image coming soon</span></div>
                       )}

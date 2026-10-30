@@ -495,7 +495,8 @@ export const InteriorProductsSection: React.FC<
                         src={product.image || '/products/product-placeholder.png'}
                         alt={product.name}
                         className="w-full h-full object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                        loading="eager"
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                       />
 

@@ -3,20 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 type Lead = {
-  id: string;
-  client_code?: string;
+  id: number;
   name?: string;
   company?: string;
   phone?: string;
   email?: string;
   project_type?: string;
-  client_type?: string;
-  project_location?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-  gst_number?: string;
-  pan_number?: string;
+  message?: string;
+  status?: string;
+  priority?: string;
+  estimated_value?: number | null;
+  client_number?: number | null;
 };
 
 type QuotationItem = {
@@ -242,7 +239,7 @@ export default function Quotations() {
         }),
 
       supabase
-        .from('clients')
+        .from('leads')
         .select('*')
         .order('created_at', {
           ascending: false,
@@ -307,7 +304,7 @@ export default function Quotations() {
     return (
       lead.name ||
       lead.company ||
-      `Client ${lead.client_code ?? lead.id}`
+      `Lead ${lead.id}`
     );
   };
 
@@ -3488,8 +3485,7 @@ window.onload = function() {
                             <strong>
                               Name:
                             </strong>{' '}
-                            {lead?.name ||
-                              '—'}
+                            {lead?.name || '—'}
                           </p>
 
                           <p className="text-sm mb-2">

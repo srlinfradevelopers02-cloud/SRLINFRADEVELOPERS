@@ -81,7 +81,8 @@ export const GallerySection: React.FC = () => {
                 src={photo.image}
                 alt={photo.title}
                 className="block w-full h-auto transition-transform duration-500 group-hover:scale-[1.02]"
-                loading = "eager"
+                loading = "lazy"
+                decoding = "async"
                 referrerPolicy="no-referrer"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-75 group-hover:opacity-90 transition-opacity" />

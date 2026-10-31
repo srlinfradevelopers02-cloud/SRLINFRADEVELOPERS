@@ -205,7 +205,11 @@ const Leads: React.FC = () => {
 
 
 
-  const [notes, setNotes] = useState('');
+  
+  // Staff can view all leads and update pipeline status.
+  // Only administrators can create, delete, assign, or edit internal notes.
+  const [isAdmin, setIsAdmin] = useState(false);
+const [notes, setNotes] = useState('');
 
   const [assignedTo, setAssignedTo] =
 
@@ -220,6 +224,31 @@ const Leads: React.FC = () => {
   // -----------------------------------------
 
 
+
+  const loadAccess = async () => {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
+
+      const { data: staffRecord, error: staffError } = await supabase
+        .from('staff')
+        .select('role, is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (staffError) throw staffError;
+      setIsAdmin(staffRecord?.role?.toUpperCase() === 'ADMIN');
+    } catch (err) {
+      console.error('Error checking lead permissions:', err);
+      setIsAdmin(false);
+    } finally {
+    }
+  };
 
   const loadStaff = async () => {
     try {
@@ -456,6 +485,7 @@ const Leads: React.FC = () => {
 
   useEffect(() => {
 
+    loadAccess();
     loadStaff();
     loadLeads();
 
@@ -708,7 +738,7 @@ const Leads: React.FC = () => {
 
 
   const handleSaveNotes = async () => {
-    if (!selectedLead) return;
+    if (!isAdmin || !selectedLead) return;
 
     try {
       setSavingNotes(true);
@@ -839,6 +869,11 @@ const Leads: React.FC = () => {
   ) => {
 
     event.preventDefault();
+
+    if (!isAdmin) {
+      alert('Only administrators can create leads.');
+      return;
+    }
 
 
 
@@ -1120,7 +1155,7 @@ const Leads: React.FC = () => {
 
   const handleDeleteLead = async () => {
 
-    if (!selectedLead) return;
+    if (!isAdmin || !selectedLead) return;
 
 
 
@@ -1380,6 +1415,7 @@ const Leads: React.FC = () => {
 
 
 
+          {isAdmin && (
           <button
 
             onClick={() =>
@@ -1395,6 +1431,7 @@ const Leads: React.FC = () => {
             + Add Lead
 
           </button>
+          )}
 
 
 
@@ -2808,10 +2845,9 @@ const Leads: React.FC = () => {
 
 
 
-              {/* INTERNAL MANAGEMENT */}
+              {/* ADMIN-ONLY INTERNAL MANAGEMENT */}
 
-
-
+              {isAdmin && (
               <section>
 
 
@@ -2938,6 +2974,7 @@ const Leads: React.FC = () => {
 
 
               </section>
+              )}
 
 
 
@@ -3081,6 +3118,7 @@ const Leads: React.FC = () => {
 
 
 
+                  {isAdmin && (
                   <button
 
                     onClick={() =>
@@ -3100,6 +3138,7 @@ const Leads: React.FC = () => {
                     Delete Lead
 
                   </button>
+                  )}
 
 
 
@@ -3135,7 +3174,7 @@ const Leads: React.FC = () => {
 
 
 
-      {showAddModal && (
+      {isAdmin && showAddModal && (
 
 
 
@@ -3716,7 +3755,7 @@ const Leads: React.FC = () => {
 
 
 
-      {showDeleteModal &&
+      {isAdmin && showDeleteModal &&
 
         selectedLead && (
 

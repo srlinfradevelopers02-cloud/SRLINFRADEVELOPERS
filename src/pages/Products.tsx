@@ -35,12 +35,6 @@ const emptyCustomer: Customer = {
   message: '',
 };
 
-const money = (value: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(value);
 
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -147,11 +141,6 @@ export default function Products() {
     0
   );
 
-  const cartTotal = selectedProducts.reduce(
-    (total, product) =>
-      total + product.price * cart[product.id],
-    0
-  );
 
   // The cart is limited by BOTH available website stock and admin limit.
   function updateQuantity(id: string, change: number) {
@@ -253,8 +242,6 @@ export default function Products() {
           `Quantity: ${quantity} ${product.unit}(s)`,
           `Admin website cart limit: ${product.website_cart_limit}`,
           `Available website stock: ${product.stock_quantity}`,
-          `Displayed unit price: ${money(product.price)}`,
-          `Displayed line total: ${money(product.price * quantity)}`,
         ].join('\n');
       })
       .join('\n\n');
@@ -264,14 +251,12 @@ export default function Products() {
       `Reference: ${referenceCode}`,
       `Company: ${customer.company.trim() || 'Not provided'}`,
       `Project location: ${customer.projectLocation.trim() || 'Not provided'}`,
-      `Cart subtotal at displayed prices: ${money(cartTotal)}`,
       '',
       'SELECTED PRODUCTS:',
       productDetails,
       '',
       `Additional requirements: ${customer.message.trim() || 'Not provided'}`,
       '',
-      'IMPORTANT: This is an enquiry, not a confirmed purchase. Prices, taxes, stock and final quotation must be confirmed by SRL Infra Developers.',
     ].join('\n');
 
     try {
@@ -480,16 +465,7 @@ export default function Products() {
                       </p>
                     )}
 
-                    <div className="mt-5 flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-xl font-bold text-slate-900">
-                          {money(product.price)}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          per {product.unit}
-                        </p>
-                      </div>
-
+                    <div className="mt-5 flex justify-end">
                       <button
                         type="button"
                         disabled={
@@ -601,10 +577,6 @@ export default function Products() {
                               {product.name}
                             </p>
 
-                            <p className="mt-1 text-sm text-slate-500">
-                              {money(product.price)} / {product.unit}
-                            </p>
-
                             <div className="mt-3 flex items-center gap-3">
                               <button
                                 type="button"
@@ -648,23 +620,10 @@ export default function Products() {
                             </div>
                           </div>
 
-                          <strong className="whitespace-nowrap">
-                            {money(product.price * cart[product.id])}
-                          </strong>
                         </div>
                       );
                     })}
                   </div>
-
-                  <div className="mt-8 flex justify-between text-lg font-bold">
-                    <span>Indicative subtotal</span>
-                    <span>{money(cartTotal)}</span>
-                  </div>
-
-                  <p className="mt-2 text-xs text-slate-500">
-                    Final prices, taxes and availability will be confirmed
-                    by SRL Infra Developers.
-                  </p>
 
                   {submitError && (
                     <p
@@ -701,8 +660,7 @@ export default function Products() {
                     Product Enquiry
                   </h2>
                   <p className="mt-2 text-sm text-slate-600">
-                    Share your details. Our team will contact you to confirm
-                    product pricing and availability.
+                    Share your details. Our team will contact you about your selected products.
                   </p>
                 </div>
 
@@ -738,17 +696,10 @@ export default function Products() {
                         </p>
                       </div>
 
-                      <span className="font-semibold">
-                        {money(product.price * cart[product.id])}
-                      </span>
                     </div>
                   ))}
                 </div>
 
-                <div className="mt-3 flex justify-between font-bold">
-                  <span>Indicative subtotal</span>
-                  <span>{money(cartTotal)}</span>
-                </div>
               </div>
 
               <form onSubmit={submitEnquiry} className="mt-6 space-y-4">

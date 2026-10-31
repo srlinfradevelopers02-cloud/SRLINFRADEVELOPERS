@@ -172,13 +172,6 @@ const ELEVATOR_TYPES: ElevatorType[] = [
   },
 ];
 
-const formatPrice = (price: number): string =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(price);
-
 const normalizeName = (value: string): string =>
   value
     .toLowerCase()
@@ -453,8 +446,8 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
 
           <p className="mt-3 text-sm text-neutral-400">
             {productsLoading
-              ? 'Loading inventory prices...'
-              : 'Product prices and availability are based on published inventory records.'}
+              ? 'Loading elevator availability...'
+              : 'Explore elevator solutions and enquire about your requirements.'}
           </p>
         </div>
 
@@ -521,52 +514,26 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
                     {elevator.description}
                   </p>
 
-                  {/* LIVE INVENTORY PRICE */}
-                  <div className="mt-5 rounded-xl border border-[#C5832B]/20 bg-[#C5832B]/5 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Price
-                    </p>
-
-                    {productsLoading ? (
-                      <p className="mt-1 text-sm text-neutral-300">
-                        Loading price...
-                      </p>
-                    ) : inventoryProduct ? (
-                      <>
-                        <p className="mt-1 text-2xl font-bold text-[#C5832B]">
-                          {formatPrice(inventoryProduct.price)}
-
-                          <span className="ml-1 text-sm font-medium text-neutral-400">
-                            / {inventoryProduct.unit}
-                          </span>
-                        </p>
-
-                        <div className="mt-3 flex items-center gap-2 text-sm">
-                          <Package className="h-4 w-4 text-[#C5832B]" />
-
-                          <span className="text-neutral-300">
-                            Stock available:
-                          </span>
-
-                          <span
-                            className={
-                              inventoryProduct.stock_quantity > 0
-                                ? 'font-semibold text-green-400'
-                                : 'font-semibold text-red-400'
-                            }
-                          >
-                            {inventoryProduct.stock_quantity > 0
-                              ? inventoryProduct.stock_quantity
-                              : 'Out of stock'}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="mt-1 text-lg font-semibold text-[#C5832B]">
-                        Price on Request
-                      </p>
-                    )}
-                  </div>
+                  {/* INVENTORY AVAILABILITY */}
+                  {inventoryProduct && (
+                    <div className="mt-5 rounded-xl border border-[#C5832B]/20 bg-[#C5832B]/5 p-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Package className="h-4 w-4 text-[#C5832B]" />
+                        <span className="text-neutral-300">Stock available:</span>
+                        <span
+                          className={
+                            inventoryProduct.stock_quantity > 0
+                              ? 'font-semibold text-green-400'
+                              : 'font-semibold text-red-400'
+                          }
+                        >
+                          {inventoryProduct.stock_quantity > 0
+                            ? inventoryProduct.stock_quantity
+                            : 'Out of stock'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* SHARED CART: only available when a real published inventory product matches */}
                   {inventoryProduct && (

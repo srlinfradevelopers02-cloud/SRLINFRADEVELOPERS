@@ -488,10 +488,8 @@ export default function Clients() {
     };
 
   const saveClient = async () => {
-    if (!isAdmin) {
-      alert(
-        'Only Admin can manage clients.'
-      );
+    if (!isAdmin && !editingClient) {
+      alert('Only Admin can create clients. Staff can update existing client details.');
       return;
     }
 
@@ -986,27 +984,6 @@ export default function Clients() {
     );
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 p-8 text-center">
-          <div className="text-5xl mb-4">
-            🔒
-          </div>
-
-          <h1 className="text-xl font-bold text-slate-900">
-            Admin Access Required
-          </h1>
-
-          <p className="text-sm text-slate-500 mt-2">
-            Only Admin users can manage
-            Clients.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8">
 
@@ -1038,19 +1015,23 @@ export default function Clients() {
               Refresh
             </button>
 
-            <button
-              onClick={openLeadModal}
-              className="px-4 py-2.5 rounded-xl border border-[#C5832B] text-[#C5832B] bg-white text-sm font-semibold hover:bg-[#C5832B]/5"
-            >
-              Convert WON Lead
-            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={openLeadModal}
+                  className="px-4 py-2.5 rounded-xl border border-[#C5832B] text-[#C5832B] bg-white text-sm font-semibold hover:bg-[#C5832B]/5"
+                >
+                  Convert WON Lead
+                </button>
 
-            <button
-              onClick={openAddForm}
-              className="px-5 py-2.5 rounded-xl bg-[#C5832B] text-white text-sm font-semibold hover:bg-[#a96f22]"
-            >
-              + Add Client
-            </button>
+                <button
+                  onClick={openAddForm}
+                  className="px-5 py-2.5 rounded-xl bg-[#C5832B] text-white text-sm font-semibold hover:bg-[#a96f22]"
+                >
+                  + Add Client
+                </button>
+              </>
+            )}
 
           </div>
         </div>
@@ -1969,14 +1950,14 @@ export default function Clients() {
                   Edit
                 </button>
 
-                <button
-                  onClick={() =>
-                    setShowDelete(true)
-                  }
-                  className="px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold"
-                >
-                  Delete
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowDelete(true)}
+                    className="px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold"
+                  >
+                    Delete
+                  </button>
+                )}
 
                 <button
                   onClick={
@@ -1994,7 +1975,7 @@ export default function Clients() {
           </div>
         )}
 
-      {showDelete &&
+      {isAdmin && showDelete &&
         selectedClient && (
           <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4">
 

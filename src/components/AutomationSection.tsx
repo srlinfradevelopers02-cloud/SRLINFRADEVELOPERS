@@ -132,13 +132,6 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
     );
   };
 
-  const money = (value: number) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }).format(value);
-
   const addToCart = (product: DbProduct) => {
     sharedCart.addItem({
       id: product.id,
@@ -454,10 +447,8 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                     <div className="p-5">
                       <h4 className="text-base sm:text-lg font-bold font-montserrat text-neutral-900 mb-2">{product.name}</h4>
                       <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed mb-5">{product.description || 'Contact SRL Infra Developers for product specifications and installation details.'}</p>
-                      <div className="mb-4 rounded-xl bg-[#FAFAFA] border border-neutral-200 p-3">
-                        <div className="text-sm font-bold text-neutral-900">{product.price > 0 ? money(product.price) : 'Price on request'}</div>
-                        <div className="text-[11px] text-neutral-500 mt-1">Unit: {product.unit} · Stock: {product.stock_quantity}</div>
-                        {product.price > 0 && <div className="text-[10px] text-neutral-500 mt-1">Displayed price is managed by SRL Infra Admin.</div>}
+                      <div className="mb-4 text-[11px] text-neutral-500">
+                        Unit: {product.unit} · Stock: {product.stock_quantity}
                       </div>
                       {limit > 0 ? (
                         <div className="flex items-center gap-2 mb-3">
@@ -488,7 +479,7 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
             onClick={sharedCart.openCart}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C5832B] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#A66B1E]"
           >
-            View Common Cart ({sharedCart.count}) · {money(sharedCart.subtotal)}
+            View Common Cart ({sharedCart.count})
           </button>
         </div>
 

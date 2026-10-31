@@ -40,8 +40,10 @@ const ADMIN_MENU = [
 
 const STAFF_MENU = [
   { label: 'Dashboard', icon: '▦', path: '/portal' },
-  { label: 'My Leads', icon: '◉', path: '/portal/leads' },
-  { label: 'My Tasks', icon: '✓', path: '/portal/tasks' },
+  { label: 'Leads', icon: '◉', path: '/portal/leads' },
+  { label: 'Clients', icon: '♙', path: '/portal/clients' },
+  { label: 'Projects', icon: '▤', path: '/portal/projects' },
+  { label: 'Tasks', icon: '✓', path: '/portal/tasks' },
 ];
 
 function getDepartmentTitle(department: string) {
@@ -208,15 +210,9 @@ export default function Dashboard() {
         .select(
           '*'
         )
-        .order('created_at', { ascending: false })
-        .limit(100);
+        .order('created_at', { ascending: false });
 
-      // Staff members should only see leads assigned to them.
-      // This assumes leads.assigned_to stores the staff table UUID.
-      if (staffData.role?.toUpperCase() !== 'ADMIN') {
-        leadQuery = leadQuery.eq('assigned_to', staffData.id);
-      }
-
+      // Admin and staff dashboards both show the same company-wide lead list.
       const { data: leadData, error: leadError } = await leadQuery;
 
       if (leadError) throw leadError;
@@ -429,7 +425,7 @@ export default function Dashboard() {
           {/* Lead statistics */}
           <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
             <StatCard
-              title={isAdmin ? 'Total Leads' : 'My Leads'}
+              title="Total Leads"
               value={stats.total}
               description="Accessible enquiries"
               icon="◉"
@@ -506,7 +502,7 @@ export default function Dashboard() {
               <div className="p-6 border-b border-black/5 flex items-center justify-between gap-4">
                 <div>
                   <h3 className="font-semibold">
-                    {isAdmin ? 'Recent Leads' : `My ${departmentTitle} Leads`}
+                    Recent Leads
                   </h3>
                   <p className="text-xs text-gray-400 mt-1">
                     Latest accessible enquiries
@@ -576,7 +572,7 @@ export default function Dashboard() {
 
               <div className="mt-6 space-y-3">
                 <QuickAction
-                  title={isAdmin ? 'View All Leads' : 'View My Leads'}
+                  title="View All Leads"
                   description="Open enquiries and follow-ups"
                   onClick={() => navigate('/portal/leads')}
                 />
@@ -606,8 +602,8 @@ export default function Dashboard() {
                   </>
                 ) : (
                   <QuickAction
-                    title="My Tasks"
-                    description="Check assigned work"
+                    title="All Tasks"
+                    description="View and update company tasks"
                     onClick={() => navigate('/portal/tasks')}
                   />
                 )}
@@ -621,7 +617,7 @@ export default function Dashboard() {
               <p className="text-xs text-gray-400 mt-1">
                 {isAdmin
                   ? 'Complete CRM lead pipeline'
-                  : `Your ${departmentTitle} pipeline`}
+                  : 'Company-wide lead pipeline'}
               </p>
             </div>
 

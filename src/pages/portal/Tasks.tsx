@@ -283,14 +283,8 @@ export default function Tasks() {
 
       const allTasks = (tasksResult.data || []) as Task[];
 
-      // UI filtering is not a replacement for Supabase RLS.
-      setTasks(
-        profile.role?.toUpperCase() === 'ADMIN'
-          ? allTasks
-          : allTasks.filter(
-              (task) => task.assigned_to === profile.id,
-            ),
-      );
+      // All active staff can view every task. RLS must grant matching SELECT access.
+      setTasks(allTasks);
 
       setStaff((staffResult.data || []) as Staff[]);
       setProjects((projectsResult.data || []) as Project[]);
@@ -415,16 +409,8 @@ export default function Tasks() {
       return;
     }
 
-    if (!canManageTasks && !editingTask) {
-      setError('Only an admin can create tasks.');
-      return;
-    }
-
-    if (
-      !canManageTasks &&
-      editingTask?.assigned_to !== currentStaff.id
-    ) {
-      setError('You can update only tasks assigned to you.');
+    if (!canManageTasks) {
+      setError('Staff can update task status only. Full task editing is restricted to Admin.');
       return;
     }
 
@@ -516,13 +502,6 @@ export default function Tasks() {
   ) {
     if (!currentStaff) return;
 
-    if (
-      !canManageTasks &&
-      task.assigned_to !== currentStaff.id
-    ) {
-      setError('You can update only tasks assigned to you.');
-      return;
-    }
 
     setError('');
     setSuccess('');
@@ -536,19 +515,13 @@ export default function Tasks() {
             ? 0
             : task.progress;
 
-      let query = supabase
+      const { error: updateError } = await supabase
         .from('tasks')
         .update({
           status: nextStatus,
           progress: nextProgress,
         })
         .eq('id', task.id);
-
-      if (!canManageTasks) {
-        query = query.eq('assigned_to', currentStaff.id);
-      }
-
-      const { error: updateError } = await query;
 
       if (updateError) throw updateError;
 
@@ -787,7 +760,7 @@ export default function Tasks() {
               <p className="mt-1 text-sm text-slate-500">
                 {canManageTasks
                   ? 'Create a task to get started.'
-                  : 'Tasks assigned to you will appear here.'}
+                  : 'All company tasks are visible here. You can update task status.'}
               </p>
 
               {canManageTasks && (
@@ -916,8 +889,7 @@ export default function Tasks() {
                       </p>
                     </div>
 
-                    {!canManageTasks &&
-                      task.assigned_to === currentStaff?.id && (
+                    {!canManageTasks && (
                         <select
                           className={`${inputClass} sm:max-w-44`}
                           value={task.status}
@@ -964,16 +936,7 @@ export default function Tasks() {
                       </div>
                     )}
 
-                    {!canManageTasks &&
-                      task.assigned_to === currentStaff?.id && (
-                        <button
-                          type="button"
-                          onClick={() => openEditForm(task)}
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Update Task
-                        </button>
-                      )}
+
                   </div>
                 </article>
               ))}
@@ -989,7 +952,7 @@ export default function Tasks() {
       </div>
 
       {/* Create/Edit modal */}
-      {showForm && (
+      {showForm && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
           <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 p-5">

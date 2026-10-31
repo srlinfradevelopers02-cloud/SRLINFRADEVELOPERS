@@ -69,9 +69,9 @@ export const InteriorProductsSection: React.FC<
       if (!active) return;
 
       if (error) {
-        console.error('Could not load website prices/stock:', error);
+        console.error('Could not load website product availability:', error);
         setDbError(
-          'Live pricing and stock could not be loaded. Please refresh or enquire for a quote.'
+          'Product availability could not be loaded. Please refresh or contact our team.'
         );
         setDbProducts([]);
       } else {
@@ -137,12 +137,6 @@ export const InteriorProductsSection: React.FC<
     return map;
   }, [dbProducts]);
 
-  const money = (value: number) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }).format(value);
 
   const applicationFilters = [
     'All Applications',
@@ -304,37 +298,14 @@ export const InteriorProductsSection: React.FC<
           </div>
         )}
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-[#FAF9F6] p-4">
-          <div>
-            <p className="font-semibold text-neutral-900">
-              Live pricing & availability
-            </p>
-
-            <p className="text-xs text-neutral-600">
-              Prices and stock are loaded from published Supabase
-              products.
-            </p>
-
-            {dbLoading && (
-              <p className="mt-1 text-xs text-neutral-500">
-                Loading live prices and stock…
-              </p>
-            )}
-
-            {dbError && (
-              <p role="alert" className="mt-1 text-xs text-amber-700">
-                {dbError}
-              </p>
-            )}
-          </div>
-
+        <div className="mb-6 flex justify-end">
           <button
             type="button"
             onClick={sharedCart.openCart}
             className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-bold text-white hover:bg-[#C47D2B]"
           >
             <ShoppingCart className="h-4 w-4" />
-            Cart ({sharedCart.count}) · {money(sharedCart.subtotal)}
+            Cart ({sharedCart.count})
           </button>
         </div>
 
@@ -558,20 +529,14 @@ export const InteriorProductsSection: React.FC<
 
                       {dbLoading ? (
                         <p className="rounded-xl bg-neutral-50 p-3 text-sm text-neutral-500">
-                          Loading price and availability…
+                          Checking product availability…
                         </p>
                       ) : dbProduct ? (
                         <div className="rounded-xl border border-neutral-200 bg-[#FAF9F6] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs text-neutral-500">
-                                Price per {dbProduct.unit}
-                              </p>
-                              <p className="text-xl font-bold text-neutral-900">
-                                {money(dbProduct.price)}
-                              </p>
-                            </div>
-
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-neutral-700">
+                              Availability
+                            </span>
                             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                               stockLimit > 0
                                 ? 'bg-green-100 text-green-800'
@@ -603,14 +568,14 @@ export const InteriorProductsSection: React.FC<
                                   type="button"
                                   disabled={quantity >= stockLimit}
                                   onClick={() => sharedCart.addItem({
-                                  id: dbProduct.id,
-                                  name: dbProduct.name,
-                                  category: dbProduct.category || 'Interior Products',
-                                  price: dbProduct.price,
-                                  unit: dbProduct.unit,
-                                  stock_quantity: dbProduct.stock_quantity,
-                                  website_cart_limit: dbProduct.website_cart_limit,
-                                })}
+                                    id: dbProduct.id,
+                                    name: dbProduct.name,
+                                    category: dbProduct.category || 'Interior Products',
+                                    price: dbProduct.price,
+                                    unit: dbProduct.unit,
+                                    stock_quantity: dbProduct.stock_quantity,
+                                    website_cart_limit: dbProduct.website_cart_limit,
+                                  })}
                                   className="rounded-lg border bg-white p-2 disabled:opacity-40"
                                   aria-label={`Increase ${product.name}`}
                                 >
@@ -642,16 +607,7 @@ export const InteriorProductsSection: React.FC<
                             </span>
                           </div>
                         </div>
-                      ) : (
-                        <div className="rounded-xl border border-neutral-200 bg-[#FAF9F6] p-4">
-                          <p className="font-semibold text-neutral-900">
-                            Price on request
-                          </p>
-                          <p className="mt-1 text-xs text-neutral-500">
-                            Contact our team for pricing and availability.
-                          </p>
-                        </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 

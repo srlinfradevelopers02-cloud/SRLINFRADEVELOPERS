@@ -229,14 +229,8 @@ export default function Projects() {
 
       const allProjects = (projectsResult.data || []) as Project[];
 
-      setProjects(
-        admin
-          ? allProjects
-          : allProjects.filter(
-              (project) =>
-                project.assigned_staff_id === loggedInStaff.id,
-            ),
-      );
+      // All active staff can view every project. RLS must grant matching SELECT access.
+      setProjects(allProjects);
 
       setClients(clientsResult.data || []);
       setQuotations(quotationsResult.data || []);
@@ -442,7 +436,7 @@ export default function Projects() {
   };
 
   const updateStatus = async (project: Project, status: string) => {
-    if (!isAdmin) return;
+    if (!currentStaff) return;
 
     try {
       const { data, error: updateError } = await supabase
@@ -620,7 +614,7 @@ export default function Projects() {
             <p className="mt-2 text-sm text-gray-500">
               {isAdmin
                 ? 'Create a project or change your search filters.'
-                : 'No projects are assigned to your staff account yet.'}
+                : 'No projects match your search or filters.'}
             </p>
           </div>
         ) : (
@@ -737,8 +731,7 @@ export default function Projects() {
                       Updated: {dateText(project.updated_at)}
                     </p>
 
-                    {isAdmin && (
-                      <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <select
                           value={project.status}
                           onChange={(e) => void updateStatus(project, e.target.value)}
@@ -751,21 +744,24 @@ export default function Projects() {
                           ))}
                         </select>
 
-                        <button
-                          onClick={() => openEdit(project)}
-                          className="rounded-lg border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100"
-                        >
-                          Edit
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => openEdit(project)}
+                              className="rounded-lg border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100"
+                            >
+                              Edit
+                            </button>
 
-                        <button
-                          onClick={() => void deleteProject(project)}
-                          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
+                            <button
+                              onClick={() => void deleteProject(project)}
+                              className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                    </div>
                   </div>
                 </article>
               );

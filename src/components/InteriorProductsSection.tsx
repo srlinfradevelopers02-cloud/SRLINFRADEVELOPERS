@@ -5,13 +5,9 @@ import {
   Check,
   MapPin,
   Layers,
-  ShoppingCart,
-  Plus,
-  Minus,
 } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
-import { useSharedCart } from './SharedCart';
 import {
   INTERIOR_PRODUCTS,
   INTERIOR_CATEGORIES,
@@ -30,16 +26,12 @@ type DbProduct = {
   category: string;
   price: number;
   unit: string;
-  stock_quantity: number;
-  website_cart_limit: number;
   image_urls: string[] | null;
 };
 
 export const InteriorProductsSection: React.FC<
   InteriorProductsSectionProps
 > = ({ onSelectProduct, onRequestQuoteForProduct }) => {
-  const sharedCart = useSharedCart();
-
   const [selectedCategory, setSelectedCategory] =
     useState<string>('All Products');
 
@@ -48,7 +40,6 @@ export const InteriorProductsSection: React.FC<
     useState('All Applications');
   const [successMessage, setSuccessMessage] = useState('');
   const [dbProducts, setDbProducts] = useState<DbProduct[]>([]);
-  const [dbLoading, setDbLoading] = useState(true);
   const [dbError, setDbError] = useState('');
 
 
@@ -56,12 +47,10 @@ export const InteriorProductsSection: React.FC<
     let active = true;
 
     async function loadPublishedProducts() {
-      setDbLoading(true);
-
       const { data, error } = await supabase
         .from('products')
         .select(
-          'id, name, description, category, price, unit, stock_quantity, website_cart_limit, image_urls'
+          'id, name, description, category, price, unit, image_urls'
         )
         .eq('is_published', true)
         .order('name', { ascending: true });
@@ -83,20 +72,10 @@ export const InteriorProductsSection: React.FC<
             category: String(item.category ?? 'Other'),
             price: Number(item.price) || 0,
             unit: String(item.unit ?? 'piece'),
-            stock_quantity: Math.max(
-              0,
-              Number(item.stock_quantity) || 0
-            ),
-            website_cart_limit: Math.max(
-              0,
-              Number(item.website_cart_limit) || 0
-            ),
             image_urls: item.image_urls ?? [],
           }))
         );
       }
-
-      setDbLoading(false);
     }
 
     void loadPublishedProducts();
@@ -108,34 +87,6 @@ export const InteriorProductsSection: React.FC<
 
   const normalizeName = (value: string) =>
     value.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  const productDbMap = useMemo(() => {
-    const map: Record<string, DbProduct | undefined> = {};
-
-    for (const catalogueItem of INTERIOR_PRODUCTS) {
-      const key = normalizeName(catalogueItem.name);
-
-      const exact = dbProducts.find(
-        (item) => normalizeName(item.name) === key
-      );
-
-      const matched =
-        exact ??
-        dbProducts.find((item) => {
-          const dbKey = normalizeName(item.name);
-
-          return (
-            key.length >= 7 &&
-            dbKey.length >= 7 &&
-            (dbKey.includes(key) || key.includes(dbKey))
-          );
-        });
-
-      map[catalogueItem.id] = matched;
-    }
-
-    return map;
-  }, [dbProducts]);
 
 
   const applicationFilters = [
@@ -298,17 +249,6 @@ export const InteriorProductsSection: React.FC<
           </div>
         )}
 
-        <div className="mb-6 flex justify-end">
-          <button
-            type="button"
-            onClick={sharedCart.openCart}
-            className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-bold text-white hover:bg-[#C47D2B]"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            Cart ({sharedCart.count})
-          </button>
-        </div>
-
         {/* Existing search and filters */}
         <div className="bg-[#FAF9F6] p-5 sm:p-6 rounded-3xl border border-neutral-200/90 mb-10 shadow-xs">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
@@ -441,20 +381,6 @@ export const InteriorProductsSection: React.FC<
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredProducts.map((product) => {
-              const dbProduct = product.id.startsWith('supabase-')
-                ? dbProducts.find((item) => item.id === product.id.slice('supabase-'.length))
-                : productDbMap[product.id];
-              const sharedItem = dbProduct
-                ? sharedCart.items.find((item) => item.id === dbProduct.id)
-                : undefined;
-              const quantity = sharedItem?.quantity ?? 0;
-              const stockLimit = dbProduct
-                ? Math.min(
-                    dbProduct.stock_quantity,
-                    dbProduct.website_cart_limit
-                  )
-                : 0;
-
               return (
                 <div
                   key={product.id}
@@ -526,88 +452,6 @@ export const InteriorProductsSection: React.FC<
                           </div>
                         ))}
                       </div>
-
-                      {dbLoading ? (
-                        <p className="rounded-xl bg-neutral-50 p-3 text-sm text-neutral-500">
-                          Checking product availability…
-                        </p>
-                      ) : dbProduct ? (
-                        <div className="rounded-xl border border-neutral-200 bg-[#FAF9F6] p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm font-semibold text-neutral-700">
-                              Availability
-                            </span>
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              stockLimit > 0
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-700'
-                            }`}>
-                              {stockLimit > 0
-                                ? `${dbProduct.stock_quantity} in stock`
-                                : 'Out of stock'}
-                            </span>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            {quantity > 0 ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => sharedCart.setQuantity(dbProduct.id, quantity - 1)}
-                                  className="rounded-lg border bg-white p-2"
-                                  aria-label={`Decrease ${product.name}`}
-                                >
-                                  <Minus className="h-4 w-4" />
-                                </button>
-
-                                <span className="min-w-8 text-center font-bold">
-                                  {quantity}
-                                </span>
-
-                                <button
-                                  type="button"
-                                  disabled={quantity >= stockLimit}
-                                  onClick={() => sharedCart.addItem({
-                                    id: dbProduct.id,
-                                    name: dbProduct.name,
-                                    category: dbProduct.category || 'Interior Products',
-                                    price: dbProduct.price,
-                                    unit: dbProduct.unit,
-                                    stock_quantity: dbProduct.stock_quantity,
-                                    website_cart_limit: dbProduct.website_cart_limit,
-                                  })}
-                                  className="rounded-lg border bg-white p-2 disabled:opacity-40"
-                                  aria-label={`Increase ${product.name}`}
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={stockLimit <= 0}
-                                onClick={() => sharedCart.addItem({
-                                  id: dbProduct.id,
-                                  name: dbProduct.name,
-                                  category: dbProduct.category || 'Interior Products',
-                                  price: dbProduct.price,
-                                  unit: dbProduct.unit,
-                                  stock_quantity: dbProduct.stock_quantity,
-                                  website_cart_limit: dbProduct.website_cart_limit,
-                                })}
-                                className="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-[#C47D2B] disabled:cursor-not-allowed disabled:opacity-40"
-                              >
-                                <ShoppingCart className="h-4 w-4" />
-                                Add to Cart
-                              </button>
-                            )}
-
-                            <span className="text-xs text-neutral-500">
-                              Cart limit: {stockLimit}
-                            </span>
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
 

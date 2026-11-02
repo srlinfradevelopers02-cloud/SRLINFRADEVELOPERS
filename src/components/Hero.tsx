@@ -47,6 +47,7 @@ export const Hero: React.FC<HeroProps> = ({
         <video
           ref={videoRef}
           src="/hero-video.mp4"
+          poster="/hero-poster.webp"
           className="absolute inset-0 z-0 w-full h-full object-cover"
           autoPlay
           muted

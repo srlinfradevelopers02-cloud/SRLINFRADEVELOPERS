@@ -26,7 +26,7 @@ export const INTEGRATED_SOLUTIONS: IntegratedSolution[] = [
       'Real-time power monitoring across refrigeration and heavy kitchen appliances',
     ],
     unifiedOutcome: 'A modern, efficient, and premium customer experience with 28% reduced monthly utility overhead.',
-    image: '/projects/restaurant.png',
+    image: '/projects/restaurant.webp',
   },
   {
     id: 'banquet-hall-solution',
@@ -45,7 +45,7 @@ export const INTEGRATED_SOLUTIONS: IntegratedSolution[] = [
       'VIP guest corridor access control with temporary QR code wristband scanning',
     ],
     unifiedOutcome: 'A prestigious, versatile celebration space that shifts effortlessly from daytime conferences to evening royal banquets.',
-    image: '/projects/banquet.png',
+    image: '/projects/banquet.webp',
   },
   {
     id: 'government-office-solution',
@@ -64,7 +64,7 @@ export const INTEGRATED_SOLUTIONS: IntegratedSolution[] = [
       'Executive elevator dispatch with biometric floor restriction',
     ],
     unifiedOutcome: 'A dignified, highly secure administrative building that dramatically reduces public maintenance costs.',
-    image: '/projects/government.png',
+    image: '/projects/government.webp',
   },
   {
     id: 'corporate-headquarters',
@@ -83,7 +83,7 @@ export const INTEGRATED_SOLUTIONS: IntegratedSolution[] = [
       'Automated blinds tracking solar glare across south-facing glass facades',
     ],
     unifiedOutcome: 'A world-class workplace that attracts top talent and enhances team productivity and health.',
-    image: '/projects/tech.png',
+    image: '/projects/tech.webp',
   },
 ];
 
@@ -109,7 +109,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'Multi-Zone DMX Lighting Automation',
       'Automated Stage Drapes',
     ],
-    image: '/projects/banquet.png',
+    image: '/projects/banquet.webp',
     description: 'Complete turn-key transformation of a 15,000 sq.ft banquet facility combining luxurious architectural finishes with centralized scene lighting automation.',
   },
   {
@@ -123,7 +123,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'Biometric Access Control on all doors',
       'Presence-based lighting sensors',
     ],
-    image: '/projects/tower.png',
+    image: '/projects/tower.webp',
     description: 'Equipped an entire 6-story technology workspace with scratch-proof SPC flooring, acoustic conference louvers, and smart biometric security.',
   },
   {
@@ -137,7 +137,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'Circadian Mood Lighting Automation',
       'Smart Ambient Temperature Controls',
     ],
-    image: '/projects/restaurant.png',
+    image: '/projects/restaurant.webp',
     description: 'Crafted an intimate culinary haven featuring rich walnut fluted wall accents and an automated lighting system that transitions seamlessly from sunset to late night.',
   },
   {
@@ -151,7 +151,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'Biometric Attendance & Turnstile Access',
       'Visitor Security Management System',
     ],
-    image: '/projects/chamber.png',
+    image: '/projects/chamber.webp',
     description: 'Modernized civil office chambers with fire-safe zero-formaldehyde wall paneling, durable stone-composite flooring, and digital credential access control.',
   },
   {
@@ -165,7 +165,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'Smart Face Recognition Door Entry',
       'Whole-Home Intelligent Lighting',
     ],
-    image: '/projects/pent.png',
+    image: '/projects/pent.webp',
     description: 'An expansive private penthouse designed with custom Italian marble-look polygranite sheets, herringbone SPC flooring, and automated curtains and door locks.',
   },
   {
@@ -179,7 +179,7 @@ export const PROJECTS_LIST: ProjectItem[] = [
       'CCTV & Footfall Analytics Sensors',
       'Motion-activated Display Spotlights',
     ],
-    image: '/projects/retail.png',
+    image: '/projects/retail.webp',
     description: 'Designed a pristine luxury boutique where products shine against marble-pattern polygranite surfaces with smart spotlights that highlight new apparel arrivals.',
   },
 ];
@@ -273,42 +273,42 @@ export const GALLERY_PHOTOS: GalleryPhoto[] = [
     id: 'gal-1',
     title: 'Executive Boardroom Feature Wall',
     category: 'Interior Products',
-    image: '/automation/wall.png',
+    image: '/automation/wall.webp',
     caption: 'Interlocking WPC fluted louvers paired with bookmatched polygranite stone paneling.',
   },
   {
     id: 'gal-2',
     title: 'Biometric Smart Access Lock',
     category: 'Smart Automation',
-    image: '/automation/smartdoor.png',
+    image: '/automation/smartdoor.webp',
     caption: 'Brushed metal smart biometric door lock with illuminated keypad and sub-second fingerprint scanner.',
   },
   {
     id: 'gal-3',
     title: 'The Grand Pavilion Banquet Hall',
     category: 'Completed Projects',
-    image: '/projects/banquet.png',
+    image: '/projects/banquet.webp',
     caption: '15,000 sq.ft banquet facility featuring automated multi-zone mood lighting and acoustic ceiling systems.',
   },
   {
     id: 'gal-4',
     title: 'Architectural Hybrid Living Space',
     category: 'Architectural Spaces',
-    image: '/automation/architectural.png',
+    image: '/automation/architectural.webp',
     caption: 'Unified architecture combining natural stone surfaces, fluted wood accents, and smart environment controls.',
   },
   {
     id: 'gal-5',
     title: 'Natural Oak SPC Luxury Flooring',
     category: 'Interior Products',
-    image: '/projects/flooring.png',
+    image: '/projects/flooring.webp',
     caption: 'Commercial-grade waterproof SPC flooring with realistic embossed-in-register wood grain texture.',
   },
   {
     id: 'gal-6',
     title: 'Corporate Reception & Security Access',
     category: 'Completed Projects',
-    image: '/automation/auto.png',
+    image: '/automation/auto.webp',
     caption: 'Keyless turnstile integration and smart entry doors installed at Regalia Technology Hub.',
   },
 ];

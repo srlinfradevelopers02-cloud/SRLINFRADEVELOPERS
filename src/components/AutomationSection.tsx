@@ -12,12 +12,9 @@ import {
   Smartphone,
   ArrowRight,
   RotateCcw,
-  Plus,
-  Minus,
 } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
-import { useSharedCart } from './SharedCart';
 
 import {
   AUTOMATION_CATEGORIES,
@@ -44,12 +41,9 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
     image_urls: string[];
     price: number;
     unit: string;
-    stock_quantity: number;
-    website_cart_limit: number;
   };
 
   const [dbProducts, setDbProducts] = useState<DbProduct[]>([]);
-  const sharedCart = useSharedCart();
 
   const [productsLoading, setProductsLoading] = useState(true);
 
@@ -60,7 +54,7 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
       const { data, error } = await supabase
         .from('products')
         .select(
-          'id,name,category,description,image_urls,price,unit,stock_quantity,website_cart_limit'
+          'id,name,category,description,image_urls,price,unit'
         )
         .eq('is_published', true)
         .in('category', [
@@ -93,14 +87,6 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
               : [],
           price: Math.max(0, Number(p.price) || 0),
           unit: String(p.unit || 'piece'),
-          stock_quantity: Math.max(
-            0,
-            Number(p.stock_quantity) || 0
-          ),
-          website_cart_limit: Math.max(
-            0,
-            Number(p.website_cart_limit) || 0
-          ),
         }))
       );
 
@@ -130,18 +116,6 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
           wanted.includes(normaliseProductName(p.name))
       )
     );
-  };
-
-  const addToCart = (product: DbProduct) => {
-    sharedCart.addItem({
-      id: product.id,
-      name: product.name,
-      category: product.category || 'Automation',
-      price: product.price,
-      unit: product.unit,
-      stock_quantity: product.stock_quantity,
-      website_cart_limit: product.website_cart_limit,
-    });
   };
 
     // ============================================================
@@ -431,8 +405,6 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {visibleProducts.map((product) => {
-                const limit = Math.min(product.stock_quantity, product.website_cart_limit);
-                const quantity = sharedCart.items.find((item) => item.id === product.id)?.quantity ?? 0;
                 const image = getProductImage(product);
                 return (
                   <article key={product.id} className="group bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-lg hover:border-[#C5832B]/50 transition-all duration-300">
@@ -448,18 +420,8 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
                       <h4 className="text-base sm:text-lg font-bold font-montserrat text-neutral-900 mb-2">{product.name}</h4>
                       <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed mb-5">{product.description || 'Contact SRL Infra Developers for product specifications and installation details.'}</p>
                       <div className="mb-4 text-[11px] text-neutral-500">
-                        Unit: {product.unit} · Stock: {product.stock_quantity}
+                        Unit: {product.unit}
                       </div>
-                      {limit > 0 ? (
-                        <div className="flex items-center gap-2 mb-3">
-                          <button type="button" aria-label={`Decrease ${product.name} quantity`} onClick={() => sharedCart.setQuantity(product.id, quantity - 1)} className="h-10 w-10 rounded-lg border border-neutral-300 flex items-center justify-center hover:border-[#C5832B]"><Minus className="w-4 h-4" /></button>
-                          <span className="min-w-8 text-center font-bold">{quantity}</span>
-                          <button type="button" aria-label={`Increase ${product.name} quantity`} onClick={() => addToCart(product)} disabled={quantity >= limit} className="h-10 w-10 rounded-lg border border-neutral-300 flex items-center justify-center hover:border-[#C5832B] disabled:opacity-40"><Plus className="w-4 h-4" /></button>
-                          <button type="button" onClick={() => addToCart(product)} disabled={quantity >= limit} className="flex-1 px-3 py-2.5 bg-[#C5832B] hover:bg-[#A66B1E] text-white text-xs font-bold uppercase tracking-wide rounded-lg disabled:opacity-40">Add to Cart</button>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-amber-700 mb-3">Cart unavailable until Admin sets stock and website cart limit.</p>
-                      )}
                       <button type="button" onClick={() => onRequestAutomationQuote(product.name)} className="w-full px-4 py-2.5 bg-neutral-900 hover:bg-[#C5832B] text-white text-xs font-bold uppercase tracking-wider font-montserrat rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"><span>Enquire About {product.name}</span><ArrowRight className="w-3.5 h-3.5" /></button>
                     </div>
                   </article>
@@ -467,20 +429,6 @@ export const AutomationSection: React.FC<AutomationSectionProps> = ({
               })}
             </div>
           )}
-        </div>
-                {/* Cart and checkout are shared globally with Interior Products and Elevators. */}
-        <div className="mb-20 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-montserrat text-lg font-bold text-neutral-900">Common Website Cart</h3>
-            <p className="mt-1 text-sm text-neutral-500">Automation products share one cart with Interior Products and Elevators.</p>
-          </div>
-          <button
-            type="button"
-            onClick={sharedCart.openCart}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C5832B] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#A66B1E]"
-          >
-            View Common Cart ({sharedCart.count})
-          </button>
         </div>
 
         {/* ================================================== */}

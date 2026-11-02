@@ -6,12 +6,9 @@ import {
   CheckCircle2,
   ShieldCheck,
   Settings2,
-  Package,
-  ShoppingCart,
 } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
-import { useSharedCart } from './SharedCart';
 
 interface ElevatorSectionProps {
   onRequestQuote: (elevatorName: string) => void;
@@ -33,8 +30,6 @@ interface InventoryProduct {
   image_urls: string[];
   price: number;
   unit: string;
-  stock_quantity: number;
-  website_cart_limit?: number;
 }
 
 const ELEVATOR_TYPES: ElevatorType[] = [
@@ -43,7 +38,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Passenger Lifts',
     description:
       'Passenger elevator with automatic center-opening doors, designed for smooth and convenient vertical transportation.',
-    image: '/automation/passenger-lift-center.png',
+    image: '/automation/passenger-lift-center.webp',
     features: [
       'Automatic center-opening doors',
       'Smooth and quiet operation',
@@ -55,7 +50,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Passenger Lifts',
     description:
       'Passenger elevator with automatic telescopic-opening doors, suitable for modern residential and commercial spaces.',
-    image: '/automation/passenger-lift-telescopic.png',
+    image: '/automation/passenger-lift-telescopic.webp',
     features: [
       'Automatic telescopic doors',
       'Space-efficient entrance',
@@ -67,7 +62,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Hospital Lifts',
     description:
       'Hospital elevator with automatic center-opening doors and a spacious configuration for healthcare environments.',
-    image: '/automation/hospital-lift-center.png',
+    image: '/automation/hospital-lift-center.webp',
     features: [
       'Automatic center-opening doors',
       'Spacious cabin configuration',
@@ -79,7 +74,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Hospital Lifts',
     description:
       'Hospital elevator with automatic telescopic-opening doors designed for reliable movement within healthcare facilities.',
-    image: '/automation/hospital-lift-telescopic.png',
+    image: '/automation/hospital-lift-telescopic.webp',
     features: [
       'Automatic telescopic doors',
       'Wide and accessible entrance',
@@ -91,7 +86,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Specialized Lifts',
     description:
       'Heavy-duty vertical transportation solutions for warehouses, commercial buildings, and industrial applications.',
-    image: '/automation/goods-lift.png',
+    image: '/automation/goods-lift.webp',
     features: [
       'Heavy-load capability',
       'Industrial construction',
@@ -103,7 +98,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Residential Lifts',
     description:
       'Compact luxury home elevators designed to integrate into modern residential spaces.',
-    image: '/automation/home-lift.png',
+    image: '/automation/home-lift.webp',
     features: [
       'Space-efficient design',
       'Luxury interiors',
@@ -115,7 +110,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Specialized Lifts',
     description:
       'Hydraulic elevator systems designed for reliable and powerful vertical movement.',
-    image: '/automation/hydraulic-lift.png',
+    image: '/automation/hydraulic-lift.webp',
     features: [
       'Powerful lifting system',
       'Reliable operation',
@@ -127,7 +122,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Architectural Lifts',
     description:
       'Architectural capsule elevators combining vertical mobility with a distinctive visual experience.',
-    image: '/automation/capsule-lift.png',
+    image: '/automation/capsule-lift.webp',
     features: [
       'Panoramic design',
       'Architectural appearance',
@@ -139,7 +134,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Specialized Lifts',
     description:
       'Vertical lifting solutions designed for controlled access and specialized applications.',
-    image: '/automation/scissor-lift.png',
+    image: '/automation/scissor-lift.webp',
     features: [
       'Stable lifting platform',
       'Specialized applications',
@@ -151,7 +146,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Specialized Lifts',
     description:
       'Structural elevator solutions engineered for buildings requiring customized vertical access systems.',
-    image: '/automation/structure-lift.png',
+    image: '/automation/structure-lift.webp',
     features: [
       'Custom configurations',
       'Structural integration',
@@ -163,7 +158,7 @@ const ELEVATOR_TYPES: ElevatorType[] = [
     category: 'Automobile Lifts',
     description:
       'Vehicle lifting solutions designed for automobile showrooms, parking systems, workshops, and commercial facilities.',
-    image: '/automation/automobile-lift.png',
+    image: '/automation/automobile-lift.webp',
     features: [
       'Vehicle handling',
       'Heavy-duty construction',
@@ -253,7 +248,6 @@ const findMatchingProduct = (
 export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
   onRequestQuote,
 }) => {
-  const { items: sharedCartItems, addItem: addSharedCartItem, setQuantity: setSharedCartQuantity } = useSharedCart();
   const [inventoryProducts, setInventoryProducts] = useState<
     InventoryProduct[]
   >([]);
@@ -270,7 +264,7 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
         const { data, error } = await supabase
           .from('products')
           .select(
-            'id,name,category,description,image_urls,price,unit,stock_quantity,website_cart_limit'
+            'id,name,category,description,image_urls,price,unit'
           )
           .eq('is_published', true);
 
@@ -305,11 +299,6 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
               image_urls: imageUrls,
               price: Math.max(0, Number(product.price) || 0),
               unit: String(product.unit || 'piece'),
-              stock_quantity: Math.max(
-                0,
-                Number(product.stock_quantity) || 0
-              ),
-              website_cart_limit: Math.max(0, Number(product.website_cart_limit) || 0),
             };
           }
         );
@@ -377,8 +366,9 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
           <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
             <div className="relative aspect-video w-full overflow-hidden bg-[#111111]">
               <img
-                src="/automation/smartelevator.png"
+                src="/automation/smartelevator.webp"
                 alt="Smart Elevators and Vertical Access"
+                loading="lazy"
                 className="absolute inset-0 h-full w-full object-contain"
               />
 
@@ -446,7 +436,7 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
 
           <p className="mt-3 text-sm text-neutral-400">
             {productsLoading
-              ? 'Loading elevator availability...'
+              ? 'Loading elevator solutions...'
               : 'Explore elevator solutions and enquire about your requirements.'}
           </p>
         </div>
@@ -513,73 +503,6 @@ export const ElevatorSection: React.FC<ElevatorSectionProps> = ({
                   <p className="mt-3 text-sm leading-6 text-neutral-400">
                     {elevator.description}
                   </p>
-
-                  {/* INVENTORY AVAILABILITY */}
-                  {inventoryProduct && (
-                    <div className="mt-5 rounded-xl border border-[#C5832B]/20 bg-[#C5832B]/5 p-4">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Package className="h-4 w-4 text-[#C5832B]" />
-                        <span className="text-neutral-300">Stock available:</span>
-                        <span
-                          className={
-                            inventoryProduct.stock_quantity > 0
-                              ? 'font-semibold text-green-400'
-                              : 'font-semibold text-red-400'
-                          }
-                        >
-                          {inventoryProduct.stock_quantity > 0
-                            ? inventoryProduct.stock_quantity
-                            : 'Out of stock'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* SHARED CART: only available when a real published inventory product matches */}
-                  {inventoryProduct && (
-                    <div className="mt-4 flex items-center gap-2">
-                      {(() => {
-                        const sharedQuantity =
-                          sharedCartItems.find((item) => item.id === inventoryProduct.id)?.quantity ?? 0;
-                        const cartLimit = Math.min(
-                          inventoryProduct.stock_quantity,
-                          Math.max(0, Number(inventoryProduct.website_cart_limit ?? inventoryProduct.stock_quantity) || 0)
-                        );
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              aria-label={`Decrease ${inventoryProduct.name} quantity`}
-                              disabled={sharedQuantity <= 0}
-                              onClick={() => setSharedCartQuantity(inventoryProduct.id, sharedQuantity - 1)}
-                              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/15 text-white disabled:opacity-40"
-                            >
-                              −
-                            </button>
-                            <span className="min-w-6 text-center font-semibold text-white">{sharedQuantity}</span>
-                            <button
-                              type="button"
-                              aria-label={`Add ${inventoryProduct.name} to shared cart`}
-                              disabled={cartLimit < 1 || sharedQuantity >= cartLimit}
-                              onClick={() => addSharedCartItem({
-                                id: inventoryProduct.id,
-                                name: inventoryProduct.name,
-                                category: inventoryProduct.category || 'Elevators',
-                                price: inventoryProduct.price,
-                                unit: inventoryProduct.unit,
-                                stock_quantity: inventoryProduct.stock_quantity,
-                                website_cart_limit: cartLimit,
-                              })}
-                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#C5832B] px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-40"
-                            >
-                              <ShoppingCart className="h-4 w-4" />
-                              Add to Shared Cart
-                            </button>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
 
                   {/* FEATURES */}
                   <div className="mt-5 space-y-2.5">

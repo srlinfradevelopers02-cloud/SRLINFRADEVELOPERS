@@ -82,7 +82,7 @@ return (
       <div className="flex justify-center">
         <div className="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-neutral-200/90 w-full max-w-4xl">
           <img
-            src="/srlcollab.png"
+            src="/srlcollab.webp"
             alt="SRL Infra Developers Collaborative and Strategic Partners"
             className="w-full h-auto object-contain rounded-lg"
           />

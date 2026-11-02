@@ -79,6 +79,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin }) => {
             <img
               src="/logo.png"
               alt="SRL Infra Developers"
+              loading="lazy"
               className="w-full max-w-md mx-auto h-auto object-contain"
             />
           </div>

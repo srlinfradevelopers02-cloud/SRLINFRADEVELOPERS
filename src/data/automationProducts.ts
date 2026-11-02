@@ -50,14 +50,14 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
         name: 'Gate Motors',
         description:
           'Automated sliding, swing, and folding gate solutions for convenient and secure property access.',
-        image: '/automation/gate-motors.png',
+        image: '/automation/gate-motors.webp',
       },
 
       {
         name: 'Digital Door Locks',
         description:
           'Modern keyless entry using fingerprint, PIN, RFID card, mobile access, and other intelligent access technologies.',
-        image: '/automation/digital-door-locks.png',
+        image: '/automation/digital-door-locks.webp',
       },
     ],
 
@@ -91,7 +91,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
       },
     ],
 
-    heroImage: '/automation/smartdoor.png',
+    heroImage: '/automation/smartdoor.webp',
   },
 
   // ============================================================
@@ -124,63 +124,63 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
         name: 'Touch Panels',
         description:
           'Elegant touch controls for lighting, scenes, curtains, and connected devices.',
-        image: '/automation/touch-panels.png',
+        image: '/automation/touch-panels.webp',
       },
 
       {
         name: 'Edge Panels',
         description:
           'Modern modular switch and socket panels designed for residential and commercial interiors.',
-        image: '/automation/edge-panels.png',
+        image: '/automation/edge-panels.webp',
       },
 
       {
         name: 'Color Panels',
         description:
           'Stylish touch panels available in modern finishes for smart and premium interiors.',
-        image: '/automation/colour-panels.png',
+        image: '/automation/colour-panels.webp',
       },
 
       {
         name: 'Touch Plus',
         description:
           'Advanced touch panels available in multiple switch configurations for modern smart spaces.',
-        image: '/automation/touch-plus.png',
+        image: '/automation/touch-plus.webp',
       },
 
       {
         name: 'Retrofit Controllers',
         description:
           'Upgrade existing electrical systems with smart automation without major rewiring.',
-        image: '/automation/retrofit-controllers.png',
+        image: '/automation/retrofit-controllers.webp',
       },
 
       {
         name: 'Kinetic Switches',
         description:
           'Wireless switching solutions that provide flexible installation without conventional wiring requirements.',
-        image: '/automation/kinetic-switches.png',
+        image: '/automation/kinetic-switches.webp',
       },
 
       {
         name: 'Motion Sensors',
         description:
           'Intelligent motion detection for automated lighting, security, and smart control.',
-        image: '/automation/motion-sensors.png',
+        image: '/automation/motion-sensors.webp',
       },
 
       {
         name: 'Sensor Lights',
         description:
           'Automatic lighting solutions that respond to movement and surrounding conditions.',
-        image: '/automation/sensor-lights.png',
+        image: '/automation/sensor-lights.webp',
       },
 
       {
         name: 'Spot Lights',
         description:
           'Focused architectural lighting for interiors, displays, walls, ceilings, and feature areas.',
-        image: '/automation/spot-lights.png',
+        image: '/automation/spot-lights.webp',
       },
     ],
 
@@ -214,7 +214,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
       },
     ],
 
-    heroImage: '/automation/smartlight.png',
+    heroImage: '/automation/smartlight.webp',
   },
 
   // ============================================================
@@ -247,7 +247,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
         name: 'Video Door',
         description:
           'See, communicate with, and manage visitors before granting access using connected video door systems.',
-        image: '/automation/video-door.png',
+        image: '/automation/video-door.webp',
       },
     ],
 
@@ -281,7 +281,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
       },
     ],
 
-    heroImage: '/automation/smartcamera.png',
+    heroImage: '/automation/smartcamera.webp',
   },
 
   // ============================================================
@@ -314,21 +314,21 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
         name: 'Curtain Motors',
         description:
           'Smooth and quiet automated curtain control for homes, offices, hotels, restaurants, and commercial spaces.',
-        image: '/automation/curtain-motors.png',
+        image: '/automation/curtain-motors.webp',
       },
 
       {
         name: 'Smart Displays',
         description:
           'Centralized touch control for lighting, scenes, climate, curtains, and connected smart devices.',
-        image: '/automation/smart-displays.png',
+        image: '/automation/smart-displays.webp',
       },
 
       {
         name: 'Lighting & Climate Automation',
         description:
           'Integrated lighting and climate solutions designed to improve comfort, ambience, and energy management.',
-        image: '/automation/smart-lighting-climate.png',
+        image: '/automation/smart-lighting-climate.webp',
       },
     ],
 
@@ -362,7 +362,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
       },
     ],
 
-    heroImage: '/automation/smartcurtain.png',
+    heroImage: '/automation/smartcurtain.webp',
   },
 
   // ============================================================
@@ -398,13 +398,13 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
         name: 'AUDIO',
         description:
           'Premium audio solutions including floor-standing, in-wall, on-wall, in-ceiling, satellite, bookshelf, soundbar, wireless multi-room, and outdoor speakers.',
-        image: '/automation/audio.png',
+        image: '/automation/audio.webp',
       },
       {
         name: 'VIDEO',
         description:
           'High-quality video solutions including 4K and Full HD projectors, ultra-short, short, and long throw projection, and fixed-frame and motorized screens.',
-        image: '/automation/video.png',
+        image: '/automation/video.webp',
       }
     ],
 
@@ -438,7 +438,7 @@ export const AUTOMATION_CATEGORIES: AutomationCategory[] = [
       },
     ],
 
-    heroImage: '/automation/home-theatre.png',
+    heroImage: '/automation/home-theatre.webp',
   },
 ];
 

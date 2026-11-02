@@ -1942,15 +1942,6 @@ window.onload = function() {
 
           <div>
 
-            <button
-              onClick={() =>
-                navigate('/portal')
-              }
-              className="mb-2 text-sm text-gray-500 hover:text-[#9a641f]"
-            >
-              ← Back to Dashboard
-            </button>
-
             <h1 className="text-3xl font-bold text-gray-900">
               Invoices
             </h1>

@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import NumberInput from '../../components/portal/NumberInput';
+import ProductPicker, {
+  type PickableProduct,
+} from '../../components/portal/ProductPicker';
 
 type Lead = {
   id: number;
@@ -165,6 +169,7 @@ export default function Quotations() {
 
   const [form, setForm] = useState<FormState>(emptyForm());
   const [items, setItems] = useState<QuotationItem[]>([emptyItem()]);
+  const [products, setProducts] = useState<PickableProduct[]>([]);
   const [discount, setDiscount] = useState(0);
 
   useEffect(() => {
@@ -230,6 +235,7 @@ export default function Quotations() {
     const [
       { data: quotationData, error: quotationError },
       { data: leadData, error: leadError },
+      { data: productData, error: productError },
     ] = await Promise.all([
       supabase
         .from('quotations')
@@ -244,14 +250,28 @@ export default function Quotations() {
         .order('created_at', {
           ascending: false,
         }),
+
+      // Product catalogue for the line-item search.
+      supabase
+        .from('products')
+        .select('id, name, category, description, price, unit')
+        .order('name', {
+          ascending: true,
+        }),
     ]);
-    console.log('Leads data:', leadData);
-    console.log('Leads error:', leadError);
-    console.log('Quotation data:', quotationData);
-    console.log('Quotation error:', quotationError);
 
     if (quotationError) throw quotationError;
     if (leadError) throw leadError;
+
+    // A missing catalogue must not block quotations;
+    // lines can still be typed by hand.
+    if (productError) {
+      console.error('Product catalogue failed to load:', productError);
+    }
+
+    setProducts(
+      (productData || []) as PickableProduct[]
+    );
 
     setQuotations(
       (quotationData || []) as Quotation[]
@@ -365,6 +385,34 @@ export default function Quotations() {
         quantity * rate;
 
       updated[index] = item;
+
+      return updated;
+    });
+  };
+
+  // Picking a catalogue product fills the line's name, unit and rate.
+  // The rate stays editable and is saved on the quotation as entered.
+  const applyProduct = (
+    index: number,
+    product: PickableProduct
+  ) => {
+    setItems((previous) => {
+      const updated = [...previous];
+
+      const rate =
+        Number(product.price || 0);
+
+      const quantity =
+        Number(updated[index].quantity || 0) || 1;
+
+      updated[index] = {
+        ...updated[index],
+        description: product.name,
+        unit: product.unit || 'Nos',
+        quantity,
+        rate,
+        amount: quantity * rate,
+      };
 
       return updated;
     });
@@ -2389,38 +2437,38 @@ window.onload = function() {
 
                             <td className="px-3 py-3">
 
-                              <input
+                              <ProductPicker
                                 value={
                                   item.description
                                 }
-                                onChange={(e) =>
+                                products={products}
+                                onChange={(value) =>
                                   updateItem(
                                     index,
                                     'description',
-                                    e.target.value
+                                    value
                                   )
                                 }
-                                placeholder="Product / Service"
-                                className="w-full border rounded-lg px-3 py-2"
+                                onPick={(product) =>
+                                  applyProduct(
+                                    index,
+                                    product
+                                  )
+                                }
+                                className="w-full min-w-[14rem] border rounded-lg px-3 py-2"
                               />
 
                             </td>
 
                             <td className="px-3 py-3">
 
-                              <input
-                                type="number"
-                                min="0"
-                                value={
-                                  item.quantity
-                                }
-                                onChange={(e) =>
+                              <NumberInput
+                                value={item.quantity}
+                                onValueChange={(value) =>
                                   updateItem(
                                     index,
                                     'quantity',
-                                    Number(
-                                      e.target.value
-                                    )
+                                    value
                                   )
                                 }
                                 className="w-24 border rounded-lg px-3 py-2"
@@ -2448,19 +2496,13 @@ window.onload = function() {
 
                             <td className="px-3 py-3">
 
-                              <input
-                                type="number"
-                                min="0"
-                                value={
-                                  item.rate
-                                }
-                                onChange={(e) =>
+                              <NumberInput
+                                value={item.rate}
+                                onValueChange={(value) =>
                                   updateItem(
                                     index,
                                     'rate',
-                                    Number(
-                                      e.target.value
-                                    )
+                                    value
                                   )
                                 }
                                 className="w-32 border rounded-lg px-3 py-2"
@@ -2596,19 +2638,13 @@ window.onload = function() {
                     GST Rate %
                   </label>
 
-                  <input
-                    type="number"
-                    min="0"
-                    value={
-                      form.gst_rate
-                    }
-                    onChange={(e) =>
+                  <NumberInput
+                    value={form.gst_rate}
+                    onValueChange={(value) =>
                       setForm({
                         ...form,
                         gst_rate:
-                          Number(
-                            e.target.value
-                          ),
+                          value,
                       })
                     }
                     className="w-full border rounded-lg px-4 py-3"
@@ -2622,15 +2658,11 @@ window.onload = function() {
                     Discount
                   </label>
 
-                  <input
-                    type="number"
-                    min="0"
+                  <NumberInput
                     value={discount}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       setDiscount(
-                        Number(
-                          e.target.value
-                        )
+                        value
                       )
                     }
                     className="w-full border rounded-lg px-4 py-3"
@@ -2970,42 +3002,42 @@ window.onload = function() {
 
                               <td className="px-3 py-3">
 
-                                <input
+                                <ProductPicker
                                   value={
                                     item.description
                                   }
+                                  products={products}
                                   onChange={(
-                                    e
+                                    value
                                   ) =>
                                     updateItem(
                                       index,
                                       'description',
-                                      e.target
-                                        .value
+                                      value
                                     )
                                   }
-                                  className="w-full border rounded-lg px-3 py-2"
+                                  onPick={(
+                                    product
+                                  ) =>
+                                    applyProduct(
+                                      index,
+                                      product
+                                    )
+                                  }
+                                  className="w-full min-w-[14rem] border rounded-lg px-3 py-2"
                                 />
 
                               </td>
 
                               <td className="px-3 py-3">
 
-                                <input
-                                  type="number"
-                                  value={
-                                    item.quantity
-                                  }
-                                  onChange={(
-                                    e
-                                  ) =>
+                                <NumberInput
+                                  value={item.quantity}
+                                  onValueChange={(value) =>
                                     updateItem(
                                       index,
                                       'quantity',
-                                      Number(
-                                        e.target
-                                          .value
-                                      )
+                                      value
                                     )
                                   }
                                   className="w-24 border rounded-lg px-3 py-2"
@@ -3036,21 +3068,13 @@ window.onload = function() {
 
                               <td className="px-3 py-3">
 
-                                <input
-                                  type="number"
-                                  value={
-                                    item.rate
-                                  }
-                                  onChange={(
-                                    e
-                                  ) =>
+                                <NumberInput
+                                  value={item.rate}
+                                  onValueChange={(value) =>
                                     updateItem(
                                       index,
                                       'rate',
-                                      Number(
-                                        e.target
-                                          .value
-                                      )
+                                      value
                                     )
                                   }
                                   className="w-32 border rounded-lg px-3 py-2"
@@ -3139,19 +3163,13 @@ window.onload = function() {
                       GST Rate %
                     </label>
 
-                    <input
-                      type="number"
-                      value={
-                        form.gst_rate
-                      }
-                      onChange={(e) =>
+                    <NumberInput
+                      value={form.gst_rate}
+                      onValueChange={(value) =>
                         setForm({
                           ...form,
                           gst_rate:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            value,
                         })
                       }
                       className="w-full border rounded-lg px-4 py-3"
@@ -3165,17 +3183,11 @@ window.onload = function() {
                       Discount
                     </label>
 
-                    <input
-                      type="number"
-                      value={
-                        discount
-                      }
-                      onChange={(e) =>
+                    <NumberInput
+                      value={discount}
+                      onValueChange={(value) =>
                         setDiscount(
-                          Number(
-                            e.target
-                              .value
-                          )
+                          value
                         )
                       }
                       className="w-full border rounded-lg px-4 py-3"

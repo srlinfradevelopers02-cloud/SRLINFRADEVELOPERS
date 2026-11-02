@@ -488,8 +488,9 @@ export default function Clients() {
     };
 
   const saveClient = async () => {
-    if (!isAdmin && !editingClient) {
-      alert('Only Admin can create clients. Staff can update existing client details.');
+    // Client records are edited by admins; staff can view them.
+    if (!isAdmin) {
+      alert('Only Admin can add or edit clients.');
       return;
     }
 
@@ -1324,16 +1325,18 @@ export default function Clients() {
                               View
                             </button>
 
-                            <button
-                              onClick={() =>
-                                openEditForm(
-                                  client
-                                )
-                              }
-                              className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-100"
-                            >
-                              Edit
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() =>
+                                  openEditForm(
+                                    client
+                                  )
+                                }
+                                className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-100"
+                              >
+                                Edit
+                              </button>
+                            )}
 
                           </div>
 
@@ -1939,16 +1942,18 @@ export default function Clients() {
 
               <div className="px-6 py-5 border-t flex justify-end gap-3">
 
-                <button
-                  onClick={() =>
-                    openEditForm(
-                      selectedClient
-                    )
-                  }
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 font-semibold"
-                >
-                  Edit
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() =>
+                      openEditForm(
+                        selectedClient
+                      )
+                    }
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 font-semibold"
+                  >
+                    Edit
+                  </button>
+                )}
 
                 {isAdmin && (
                   <button

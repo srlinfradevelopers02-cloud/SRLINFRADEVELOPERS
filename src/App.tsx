@@ -23,14 +23,14 @@ import Inventory from './pages/portal/Inventory';
 import ProjectMaterials from './pages/portal/ProjectMaterials';
 import Purchasing from './pages/portal/Purchasing';
 import Staff from './pages/portal/Staff';
-import Products from './pages/Products';
+import ProductCataloguePage from './pages/portal/ProductCataloguePage';
+import PortalLayout from './components/portal/PortalLayout';
 
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { OfficialBrandIdentity } from './components/OfficialBrandIdentity';
 import { BusinessIntro } from './components/BusinessIntro';
 import { InteriorProductsSection } from './components/InteriorProductsSection';
-import { SharedCartProvider } from "./components/SharedCart";
 import { AutomationSection } from './components/AutomationSection';
 import { ElevatorSection } from './components/ElevatorSection';
 import { SolutionsSection } from './components/SolutionsSection';
@@ -339,15 +339,14 @@ export default function App() {
 
       <Route
         path="/"
-        element={
-         <SharedCartProvider>
-          <PublicWebsite />
-        </SharedCartProvider>
-      }
+        element={<PublicWebsite />}
       />
+
+      {/* The cart-based products page is retired; send visitors to the
+          product section on the home page instead. */}
       <Route
         path="/products"
-        element={<Products />}
+        element={<Navigate to="/" replace />}
       />
 
       <Route
@@ -355,102 +354,29 @@ export default function App() {
         element={<Login />}
       />
 
+      {/* Every portal page renders inside one layout, so the sidebar
+          stays in place while only the page content changes. */}
       <Route
         path="/portal"
         element={
           <ProtectedCRM>
-            <Dashboard />
+            <PortalLayout />
           </ProtectedCRM>
         }
-      />
-
-      <Route
-        path="/portal/leads"
-        element={
-          <ProtectedCRM>
-            <Leads />
-          </ProtectedCRM>
-        }
-      />
-
-      <Route
-        path="/portal/clients"
-        element={
-          <ProtectedCRM>
-            <Clients />
-          </ProtectedCRM>
-        }
-      />
-
-      <Route
-        path="/portal/quotations"
-        element={
-          <ProtectedCRM>
-            <Quotations />
-          </ProtectedCRM>
-        }
-      />
-
-      <Route
-        path="/portal/invoices"
-        element={
-          <ProtectedCRM>
-            <Invoices />
-          </ProtectedCRM>
-        }
-      />
-
-      <Route
-        path="/portal/projects"
-        element={
-          <ProtectedCRM>
-            <Projects />
-          </ProtectedCRM>
-        }
-      />
-
-      <Route
-        path="/portal/tasks"
-        element={
-          <ProtectedCRM>
-            <Tasks />
-          </ProtectedCRM>
-        }
-      />
-      <Route
-        path="/portal/inventory"
-        element={
-          <ProtectedCRM>
-            <Inventory />
-          </ProtectedCRM>
-        }
-      />
-      <Route
-        path="/portal/project-materials"
-        element={
-          <ProtectedCRM>
-            <ProjectMaterials />
-          </ProtectedCRM>
-        }
-      />
-      <Route
-        path="/portal/purchasing"
-        element={
-          <ProtectedCRM>
-            <Purchasing />
-          </ProtectedCRM>
-        }
-      />
-      
-
-      <Route
-        path="/portal/staff"
-        element={
-          <ProtectedCRM>
-            <Staff />
-          </ProtectedCRM>
-        }
-      />
+      >
+        <Route index element={<Dashboard />} />
+        <Route path="leads" element={<Leads />} />
+        <Route path="clients" element={<Clients />} />
+        <Route path="quotations" element={<Quotations />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route path="projects" element={<Projects />} />
+        <Route path="tasks" element={<Tasks />} />
+        <Route path="inventory" element={<Inventory />} />
+        <Route path="product-catalog" element={<ProductCataloguePage />} />
+        <Route path="project-materials" element={<ProjectMaterials />} />
+        <Route path="purchasing" element={<Purchasing />} />
+        <Route path="staff" element={<Staff />} />
+      </Route>
 
       <Route
         path="*"

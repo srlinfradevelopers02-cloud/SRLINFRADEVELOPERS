@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 
 import { supabase } from '../../lib/supabase';
+import { usePortalStaff } from '../../components/portal/PortalLayout';
+import { isOwner } from '../../lib/permissions';
 
 type Role = 'ADMIN'| 'STAFF';
 
@@ -360,6 +362,17 @@ export default function Staff() {
   const [form, setForm] =
     useState<StaffForm>(emptyForm);
 
+  // Staff management belongs to the Owner alone.
+  // The database enforces the same rule (is_owner()).
+  const canManageStaff =
+    isOwner(usePortalStaff());
+
+  const denyStaffChange = () => {
+    alert(
+      'Only the Owner can add or edit staff.'
+    );
+  };
+
   /*
    * ---------------------------------------------------------
    * LOAD STAFF
@@ -423,8 +436,8 @@ export default function Staff() {
   };
 
   useEffect(() => {
-    loadStaff();
-  }, []);
+    if (canManageStaff) loadStaff();
+  }, [canManageStaff]);
 
   /*
    * ---------------------------------------------------------
@@ -524,6 +537,8 @@ export default function Staff() {
    */
 
   const openAddForm = () => {
+    if (!canManageStaff) return denyStaffChange();
+
     setEditingStaff(null);
 
     setForm({
@@ -633,6 +648,8 @@ export default function Staff() {
     event.preventDefault();
 
     if (saving) return;
+
+    if (!canManageStaff) return denyStaffChange();
 
     if (!form.staff_code.trim()) {
       alert(
@@ -853,6 +870,8 @@ export default function Staff() {
   const deleteStaff = async (
     person: Staff
   ) => {
+    if (!canManageStaff) return denyStaffChange();
+
     const confirmed =
       window.confirm(
         `Delete ${person.full_name}?\n\nThis deletes the staff profile only. It does NOT delete the Supabase login account.`
@@ -908,6 +927,8 @@ export default function Staff() {
   const toggleActive = async (
     person: Staff
   ) => {
+    if (!canManageStaff) return denyStaffChange();
+
     try {
       const newStatus =
         !person.is_active;
@@ -1033,6 +1054,21 @@ export default function Staff() {
    * ---------------------------------------------------------
    */
 
+  if (!canManageStaff) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-6">
+        <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-slate-900">
+            Staff Management
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Only the Owner can view and manage staff.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">
       <div className="mx-auto max-w-7xl">
@@ -1066,13 +1102,15 @@ export default function Staff() {
                 : 'Refresh'}
             </button>
 
-            <button
-              type="button"
-              onClick={openAddForm}
-              className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-            >
-              + Add Staff
-            </button>
+            {canManageStaff && (
+              <button
+                type="button"
+                onClick={openAddForm}
+                className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              >
+                + Add Staff
+              </button>
+            )}
           </div>
         </div>
 
@@ -1331,12 +1369,13 @@ export default function Staff() {
                         <td className="px-5 py-4">
                           <button
                             type="button"
+                            disabled={!canManageStaff}
                             onClick={() =>
                               toggleActive(
                                 person
                               )
                             }
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-default ${
                               person.is_active
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-red-100 text-red-700'
@@ -1368,17 +1407,19 @@ export default function Staff() {
                               View
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openEditForm(
-                                  person
-                                )
-                              }
-                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                            >
-                              Edit
-                            </button>
+                            {canManageStaff && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openEditForm(
+                                    person
+                                  )
+                                }
+                                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                              >
+                                Edit
+                              </button>
+                            )}
 
                           </div>
                         </td>
@@ -1899,6 +1940,8 @@ export default function Staff() {
 
               <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
 
+                {canManageStaff && (
+                  <>
                 <button
                   type="button"
                   onClick={() =>
@@ -1941,6 +1984,8 @@ export default function Staff() {
                 >
                   Delete
                 </button>
+                  </>
+                )}
 
               </div>
 

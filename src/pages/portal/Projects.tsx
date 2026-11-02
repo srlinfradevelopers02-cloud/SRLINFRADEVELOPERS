@@ -500,13 +500,6 @@ export default function Projects() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <button
-              onClick={() => navigate('/portal')}
-              className="mb-3 text-sm text-gray-500 hover:text-amber-700"
-            >
-              ← Back to Dashboard
-            </button>
-
             <h1 className="text-3xl font-bold text-gray-900">Projects</h1>
             <p className="mt-2 text-gray-500">
               Manage SRL Infra Developers projects from planning to completion.

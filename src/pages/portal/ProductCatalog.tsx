@@ -50,7 +50,13 @@ const inputClass =
 
 
 
-export default function ProductCatalog() {
+// Admins edit prices, photos and publishing; everyone else gets a
+// read-only view of the same catalogue.
+export default function ProductCatalog({
+  canEdit = true,
+}: {
+  canEdit?: boolean;
+}) {
 
   const [products, setProducts] = useState<Product[]>([]);
 
@@ -1146,15 +1152,19 @@ export default function ProductCatalog() {
 
         <p className="mt-1 text-sm text-slate-500">
 
-          Manage website prices, units, stock, cart limits, photos, and product
+          {canEdit
 
-          publishing. Confirm supplier pricing before publishing final prices.
+            ? 'Manage website prices, units, stock, cart limits, photos, and product publishing. Confirm supplier pricing before publishing final prices.'
+
+            : 'Browse SRL products with their prices, units and photos.'}
 
         </p>
 
       </div>
 
 
+
+      {canEdit && (
 
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
 
@@ -1199,6 +1209,8 @@ export default function ProductCatalog() {
         </button>
 
       </div>
+
+      )}
 
 
 
@@ -1327,6 +1339,10 @@ export default function ProductCatalog() {
             </div>
 
 
+
+            {canEdit ? (
+
+              <>
 
             <div className="mt-4 space-y-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3">
 
@@ -1576,6 +1592,48 @@ export default function ProductCatalog() {
 
             </div>
 
+              </>
+
+            ) : (
+
+              <dl className="mt-4 grid grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+
+                <div>
+
+                  <dt className="text-xs text-slate-500">Price</dt>
+
+                  <dd className="font-semibold text-slate-900">
+
+                    ₹{Number(product.price ?? 0).toLocaleString('en-IN')}
+
+                  </dd>
+
+                </div>
+
+                <div>
+
+                  <dt className="text-xs text-slate-500">Unit</dt>
+
+                  <dd className="font-semibold text-slate-900">{product.unit || '—'}</dd>
+
+                </div>
+
+                <div>
+
+                  <dt className="text-xs text-slate-500">Stock</dt>
+
+                  <dd className="font-semibold text-slate-900">
+
+                    {product.stock_quantity ?? 0}
+
+                  </dd>
+
+                </div>
+
+              </dl>
+
+            )}
+
 
 
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -1600,6 +1658,8 @@ export default function ProductCatalog() {
 
 
 
+                  {canEdit && (
+
                   <button
 
                     type="button"
@@ -1616,6 +1676,8 @@ export default function ProductCatalog() {
 
                   </button>
 
+                  )}
+
                 </div>
 
               ))}
@@ -1631,6 +1693,10 @@ export default function ProductCatalog() {
             </p>
 
 
+
+            {canEdit && (
+
+              <>
 
             <label className="mt-3 block cursor-pointer rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm font-medium text-blue-700 hover:bg-blue-50">
 
@@ -1687,6 +1753,10 @@ export default function ProductCatalog() {
               {product.is_published ? 'Unpublish product' : 'Publish product'}
 
             </button>
+
+              </>
+
+            )}
 
           </article>
 

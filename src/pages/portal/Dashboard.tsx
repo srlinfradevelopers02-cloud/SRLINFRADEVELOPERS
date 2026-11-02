@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { usePortalStaff } from '../../components/portal/PortalLayout';
+import { isOwner } from '../../lib/permissions';
 
 type Staff = {
   id: string;
@@ -17,34 +19,13 @@ type Staff = {
 
 type Lead = {
   id: number;
-  client_name?: string;
-  company_name?: string;
+  name?: string;
+  company?: string;
   project_type?: string;
   status?: string;
   work_status?: string;
   created_at?: string;
 };
-
-const ADMIN_MENU = [
-  { label: 'Dashboard', icon: '▦', path: '/portal' },
-  { label: 'Leads', icon: '◉', path: '/portal/leads' },
-  { label: 'Clients', icon: '♙', path: '/portal/clients' },
-  { label: 'Projects', icon: '▤', path: '/portal/projects' },
-  { label: 'Tasks', icon: '✓', path: '/portal/tasks' },
-  { label: 'Inventory', icon: '▣', path: '/portal/inventory' },
-  { label: 'Product Catalogue', icon: '▧', path: '/portal/product-catalog' },
-  { label: 'Quotations', icon: '₹', path: '/portal/quotations' },
-  { label: 'Invoices', icon: '▤', path: '/portal/invoices' },
-  { label: 'Staff', icon: '♟', path: '/portal/staff' },
-];
-
-const STAFF_MENU = [
-  { label: 'Dashboard', icon: '▦', path: '/portal' },
-  { label: 'Leads', icon: '◉', path: '/portal/leads' },
-  { label: 'Clients', icon: '♙', path: '/portal/clients' },
-  { label: 'Projects', icon: '▤', path: '/portal/projects' },
-  { label: 'Tasks', icon: '✓', path: '/portal/tasks' },
-];
 
 function getDepartmentTitle(department: string) {
   switch (department.toUpperCase()) {
@@ -166,6 +147,12 @@ export default function Dashboard() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const isAdmin = staff?.role?.toUpperCase() === 'ADMIN';
+  const owner = isOwner(usePortalStaff());
+
+  // Staff management is the Owner's alone.
+  const adminModules = ADMIN_MODULES.filter(
+    (module) => owner || module.path !== '/portal/staff'
+  );
   const department = staff?.department?.toUpperCase() || '';
   const departmentTitle = getDepartmentTitle(department);
 
@@ -273,16 +260,10 @@ export default function Dashboard() {
   }, [leads]);
 
   const recentLeads = leads.slice(0, 6);
-  const menuItems = isAdmin ? ADMIN_MENU : STAFF_MENU;
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/portal/login', { replace: true });
-  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f3]">
+      <div className="py-32 flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-black/10 border-t-black rounded-full animate-spin mx-auto" />
           <p className="mt-4 text-sm text-gray-500">
@@ -296,86 +277,7 @@ export default function Dashboard() {
   if (!staff) return null;
 
   return (
-    <div className="min-h-screen bg-[#f5f5f3] text-[#171717] flex">
-      <aside className="w-64 bg-[#111111] text-white min-h-screen hidden md:flex flex-col shrink-0">
-        <div className="px-6 py-6 border-b border-white/10">
-          <img
-            src="/logo.png"
-            alt="SRL Infra Developers"
-            className="w-12 h-12 object-contain mb-4"
-          />
-          <h1 className="text-lg font-semibold">SRL INFRA</h1>
-          <p className="text-xs text-gray-400 mt-1">DEVELOPERS</p>
-          <div className="mt-4 inline-flex px-3 py-1 rounded-full bg-white/10 text-[10px] tracking-widest uppercase text-gray-300">
-            Operational CRM
-          </div>
-        </div>
-
-        <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
-            const active = window.location.pathname === item.path;
-
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition ${
-                  active
-                    ? 'bg-white text-black'
-                    : 'text-gray-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <span className="w-5 text-center">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-white/10">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-300 hover:bg-red-500/10 hover:text-red-300"
-          >
-            <span>↪</span>
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      <main className="flex-1 min-w-0">
-        <header className="min-h-20 bg-white border-b border-black/5 flex items-center justify-between gap-4 px-5 md:px-10 py-4">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-gray-400">
-              {isAdmin ? 'Administration' : departmentTitle}
-            </p>
-            <h2 className="text-xl md:text-2xl font-semibold mt-1">
-              {isAdmin
-                ? 'Admin Dashboard'
-                : `${departmentTitle} Dashboard`}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => void loadDashboard()}
-              title="Refresh dashboard"
-              className="px-3 py-2 border border-black/10 rounded-lg text-sm hover:bg-gray-50"
-            >
-              ↻ <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <div className="hidden sm:block text-right">
-              <p className="text-sm font-medium">{staff.full_name}</p>
-              <p className="text-xs text-gray-400">
-                {isAdmin ? 'Administrator' : `${departmentTitle} Staff`}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-[#111111] text-white flex items-center justify-center font-semibold">
-              {staff.full_name.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        </header>
-
+    <div className="text-[#171717]">
         <div className="p-5 md:p-10">
           {errorMessage && (
             <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -468,7 +370,7 @@ export default function Dashboard() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {ADMIN_MODULES.map((module) => (
+                {adminModules.map((module) => (
                   <button
                     key={module.title}
                     onClick={() => navigate(module.path)}
@@ -539,8 +441,8 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <p className="font-medium truncate">
-                            {lead.client_name ||
-                              lead.company_name ||
+                            {lead.name ||
+                              lead.company ||
                               'Unnamed Client'}
                           </p>
                           <p className="text-xs text-gray-400 mt-1">
@@ -589,11 +491,13 @@ export default function Dashboard() {
                       description="Manage website products"
                       onClick={() => navigate('/portal/product-catalog')}
                     />
-                    <QuickAction
-                      title="Manage Staff"
-                      description="Employee management"
-                      onClick={() => navigate('/portal/staff')}
-                    />
+                    {owner && (
+                      <QuickAction
+                        title="Manage Staff"
+                        description="Employee management"
+                        onClick={() => navigate('/portal/staff')}
+                      />
+                    )}
                     <QuickAction
                       title="Quotations"
                       description="Manage client quotations"
@@ -655,7 +559,6 @@ export default function Dashboard() {
             SRL Infra Developers · CRM Administration
           </footer>
         </div>
-      </main>
     </div>
   );
 }
